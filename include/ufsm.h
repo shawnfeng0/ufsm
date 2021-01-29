@@ -6,12 +6,12 @@ namespace detail {
 
 template <typename T1, typename T2>
 struct IsSameType {
-  static constexpr bool value = false;
+  constexpr operator bool() { return false; }
 };
 
 template <typename T>
 struct IsSameType<T, T> {
-  static constexpr bool value = true;
+  constexpr operator bool() { return true; }
 };
 
 static constexpr void *NoTransit() { return nullptr; }
@@ -41,22 +41,20 @@ class NoTransit : public Transition {};
 
 template <typename T>
 class State {
- private:
-  using FsmType = T;
-
   // Only allow inheritance, no construction
  protected:
   State() = default;
-
- public:
   virtual ~State() = default;
-  virtual ufsm::Transition Process(const Event &) { return {}; }
 
   template <typename NewState>
   Transition Transit() {
-    static_assert(detail::IsSameType<typename NewState::FsmType, T>::value, "");
+    static_assert(detail::IsSameType<typename NewState::FsmType, FsmType>{},
+                  "");
     return Transition{detail::Constructor<NewState>};
   }
+
+ public:
+  using FsmType = T;
 };
 
 template <typename StateBase>
@@ -69,6 +67,9 @@ class Fsm {
  public:
   template <typename InitState>
   void Initiate() {
+    static_assert(detail::IsSameType<typename InitState::FsmType,
+                                     typename StateBase::FsmType>{},
+                  "");
     delete state_;
     state_ =
         reinterpret_cast<decltype(state_)>(detail::Constructor<InitState>());
