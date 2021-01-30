@@ -1,8 +1,8 @@
 #include <cstring>
 #include <iostream>
 
-#include "../include/ufsm.h"
 #include "cmdline.h"
+#include "ufsm.h"
 
 // Precompiler define to get only filename;
 #if !defined(__FILENAME__)
@@ -21,14 +21,18 @@
   TYPE() { MARK_FUNCTION; } \
   virtual ~TYPE() { MARK_FUNCTION; }
 
-class Connector : public ufsm::State<Connector> {
+struct ConnectorContext {
+  int data;
+};
+
+class Connector : public ufsm::State<Connector, ConnectorContext> {
  public:
   struct EvConnect : public ufsm::Event {
     MARK(EvConnect)
   };
   virtual ufsm::Transition React(const EvConnect &event) {
     MARK_FUNCTION;
-    return {};
+    return ufsm::NoTransit{};
   }
 
   struct EvConnectSuccess : public ufsm::Event {
@@ -36,7 +40,7 @@ class Connector : public ufsm::State<Connector> {
   };
   virtual ufsm::Transition React(const EvConnectSuccess &event) {
     MARK_FUNCTION;
-    return {};
+    return ufsm::NoTransit{};
   }
 
   struct EvConnectFailure : public ufsm::Event {
@@ -44,7 +48,7 @@ class Connector : public ufsm::State<Connector> {
   };
   virtual ufsm::Transition React(const EvConnectFailure &event) {
     MARK_FUNCTION;
-    return {};
+    return ufsm::NoTransit{};
   }
 
   struct EvDisconnect : public ufsm::Event {
@@ -71,7 +75,7 @@ class Disconnected;
 
 class Disconnected : public Connector {
   ufsm::Transition React(const EvConnect &event) override {
-    MARK_FUNCTION;
+    Context().data++;
     return Transit<Connecting>();
   }
   MARK(Disconnected);
@@ -79,9 +83,11 @@ class Disconnected : public Connector {
 
 class Connecting : public Connector {
   ufsm::Transition React(const EvConnectSuccess &event) override {
+    Context().data++;
     return Transit<Connected>();
   }
   ufsm::Transition React(const EvConnectFailure &event) override {
+    Context().data++;
     return Transit<Disconnected>();
   }
   MARK(Connecting);
@@ -89,6 +95,7 @@ class Connecting : public Connector {
 
 class Connected : public Connector {
   ufsm::Transition React(const EvDisconnect &event) override {
+    Context().data++;
     return Transit<Disconnecting>();
   }
   MARK(Connected);
@@ -96,6 +103,7 @@ class Connected : public Connector {
 
 class Disconnecting : public Connector {
   ufsm::Transition React(const EvDisconnect &event) override {
+    Context().data++;
     return Transit<Disconnected>();
   }
   MARK(Disconnecting);
@@ -121,6 +129,7 @@ int main() {
   while (std::cin >> str) {
     if (cmdline.ProcessCmd(str)) {
       std::cout << "Command executed." << std::endl;
+      LOG << connector.Context().data << std::endl;
     } else {
       std::cout << cmdline.Dump();
     }
