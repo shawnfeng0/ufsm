@@ -26,7 +26,7 @@ class Connector : public ufsm::State<Connector> {
   struct EvConnect : public ufsm::Event {
     MARK(EvConnect)
   };
-  virtual ufsm::Transition Process(const EvConnect &event) {
+  virtual ufsm::Transition React(const EvConnect &event) {
     MARK_FUNCTION;
     return {};
   }
@@ -34,7 +34,7 @@ class Connector : public ufsm::State<Connector> {
   struct EvConnectSuccess : public ufsm::Event {
     MARK(EvConnectSuccess)
   };
-  virtual ufsm::Transition Process(const EvConnectSuccess &event) {
+  virtual ufsm::Transition React(const EvConnectSuccess &event) {
     MARK_FUNCTION;
     return {};
   }
@@ -42,7 +42,7 @@ class Connector : public ufsm::State<Connector> {
   struct EvConnectFailure : public ufsm::Event {
     MARK(EvConnectFailure)
   };
-  virtual ufsm::Transition Process(const EvConnectFailure &event) {
+  virtual ufsm::Transition React(const EvConnectFailure &event) {
     MARK_FUNCTION;
     return {};
   }
@@ -50,7 +50,7 @@ class Connector : public ufsm::State<Connector> {
   struct EvDisconnect : public ufsm::Event {
     MARK(EvDisconnect)
   };
-  virtual ufsm::Transition Process(const EvDisconnect &event) {
+  virtual ufsm::Transition React(const EvDisconnect &event) {
     MARK_FUNCTION;
     return ufsm::NoTransit{};
   }
@@ -58,7 +58,7 @@ class Connector : public ufsm::State<Connector> {
   struct EvDisconnectSuccess : public ufsm::Event {
     MARK(EvDisconnectSuccess)
   };
-  virtual ufsm::Transition Process(const EvDisconnectSuccess &event) {
+  virtual ufsm::Transition React(const EvDisconnectSuccess &event) {
     MARK_FUNCTION;
     return ufsm::NoTransit{};
   }
@@ -70,7 +70,7 @@ class Connected;
 class Disconnected;
 
 class Disconnected : public Connector {
-  ufsm::Transition Process(const EvConnect &event) override {
+  ufsm::Transition React(const EvConnect &event) override {
     MARK_FUNCTION;
     return Transit<Connecting>();
   }
@@ -78,24 +78,24 @@ class Disconnected : public Connector {
 };
 
 class Connecting : public Connector {
-  ufsm::Transition Process(const EvConnectSuccess &event) override {
+  ufsm::Transition React(const EvConnectSuccess &event) override {
     return Transit<Connected>();
   }
-  ufsm::Transition Process(const EvConnectFailure &event) override {
+  ufsm::Transition React(const EvConnectFailure &event) override {
     return Transit<Disconnected>();
   }
   MARK(Connecting);
 };
 
 class Connected : public Connector {
-  ufsm::Transition Process(const EvDisconnect &event) override {
+  ufsm::Transition React(const EvDisconnect &event) override {
     return Transit<Disconnecting>();
   }
   MARK(Connected);
 };
 
 class Disconnecting : public Connector {
-  ufsm::Transition Process(const EvDisconnect &event) override {
+  ufsm::Transition React(const EvDisconnect &event) override {
     return Transit<Disconnected>();
   }
   MARK(Disconnecting);

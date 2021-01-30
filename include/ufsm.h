@@ -74,7 +74,8 @@ class Fsm {
 
   template <typename E>
   void ProcessEvent(const E &event) {
-    auto transition = state_->Process(event);
+    if (!state_) return;
+    auto transition = state_->React(event);
     if (transition) {
       delete state_;
       state_ = reinterpret_cast<decltype(state_)>(transition());
