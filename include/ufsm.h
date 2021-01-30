@@ -61,9 +61,6 @@ template <typename StateBase>
 class Fsm {
   StateBase *state_{};
 
- protected:
-  virtual ~Fsm() { delete state_; }
-
  public:
   template <typename InitState>
   void Initiate() {
@@ -83,6 +80,7 @@ class Fsm {
       state_ = reinterpret_cast<decltype(state_)>(transition());
     }
   }
+  virtual ~Fsm() { delete state_; }
 };
 
 }  // namespace ufsm

@@ -21,12 +21,7 @@
   TYPE() { MARK_FUNCTION; } \
   virtual ~TYPE() { MARK_FUNCTION; }
 
-class ConnectorState;
-class Connector : public ufsm::Fsm<ConnectorState> {
-  MARK(Connector)
-};
-
-class ConnectorState : public ufsm::State<Connector> {
+class Connector : public ufsm::State<Connector> {
  public:
   struct EvConnect : public ufsm::Event {
     MARK(EvConnect)
@@ -74,7 +69,7 @@ class Disconnecting;
 class Connected;
 class Disconnected;
 
-class Disconnected : public ConnectorState {
+class Disconnected : public Connector {
   ufsm::Transition Process(const EvConnect &event) override {
     MARK_FUNCTION;
     return Transit<Connecting>();
@@ -82,7 +77,7 @@ class Disconnected : public ConnectorState {
   MARK(Disconnected);
 };
 
-class Connecting : public ConnectorState {
+class Connecting : public Connector {
   ufsm::Transition Process(const EvConnectSuccess &event) override {
     return Transit<Connected>();
   }
@@ -92,14 +87,14 @@ class Connecting : public ConnectorState {
   MARK(Connecting);
 };
 
-class Connected : public ConnectorState {
+class Connected : public Connector {
   ufsm::Transition Process(const EvDisconnect &event) override {
     return Transit<Disconnecting>();
   }
   MARK(Connected);
 };
 
-class Disconnecting : public ConnectorState {
+class Disconnecting : public Connector {
   ufsm::Transition Process(const EvDisconnect &event) override {
     return Transit<Disconnected>();
   }
@@ -107,23 +102,19 @@ class Disconnecting : public ConnectorState {
 };
 
 int main() {
-  Connector connector;
+  ufsm::Fsm<Connector> connector;
   connector.Initiate<Disconnected>();
   Cmdline cmdline;
   cmdline
-      .Add("connect",
-           [&]() { connector.ProcessEvent(ConnectorState::EvConnect{}); })
+      .Add("connect", [&]() { connector.ProcessEvent(Connector::EvConnect{}); })
       .Add("disconnect",
-           [&]() { connector.ProcessEvent(ConnectorState::EvDisconnect{}); })
-      .Add(
-          "connect_success",
-          [&]() { connector.ProcessEvent(ConnectorState::EvConnectSuccess{}); })
-      .Add(
-          "connect_failure",
-          [&]() { connector.ProcessEvent(ConnectorState::EvConnectFailure{}); })
-      .Add("disconnect_success", [&]() {
-        connector.ProcessEvent(ConnectorState::EvDisconnectSuccess{});
-      });
+           [&]() { connector.ProcessEvent(Connector::EvDisconnect{}); })
+      .Add("connect_success",
+           [&]() { connector.ProcessEvent(Connector::EvConnectSuccess{}); })
+      .Add("connect_failure",
+           [&]() { connector.ProcessEvent(Connector::EvConnectFailure{}); })
+      .Add("disconnect_success",
+           [&]() { connector.ProcessEvent(Connector::EvDisconnectSuccess{}); });
   std::cout << cmdline.Dump();
 
   std::string str;
