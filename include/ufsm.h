@@ -71,20 +71,19 @@ class State : public detail::ContextContainer {
 
 template <typename StateBase>
 class Fsm {
-  StateBase *state_{};
-  typename StateBase::ContextType *context_{};
-
  private:
+  StateBase *state_{};
+  typename StateBase::ContextType context_{};
+
   void Transit(void *next_state) {
     if (!next_state) return;
     state_ = reinterpret_cast<decltype(state_)>(next_state);
     // Set context
     detail::ContextContainer &ctx = *state_;
-    ctx.data_ptr_ = context_;
+    ctx.data_ptr_ = &context_;
   }
 
  public:
-  Fsm() { context_ = new typename StateBase::ContextType; }
   template <typename InitState>
   void Initiate() {
     static_assert(detail::IsSameType<typename InitState::FsmType,
@@ -94,7 +93,7 @@ class Fsm {
     Transit(detail::Constructor<InitState>());
   }
 
-  const typename StateBase::ContextType &Context() const { return *context_; }
+  const typename StateBase::ContextType &Context() const { return context_; }
 
   template <typename E>
   void ProcessEvent(const E &event) {
@@ -105,10 +104,7 @@ class Fsm {
       Transit(transition());
     }
   }
-  virtual ~Fsm() {
-    delete state_;
-    delete context_;
-  }
+  virtual ~Fsm() { delete state_; }
 };
 
 }  // namespace ufsm

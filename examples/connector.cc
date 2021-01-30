@@ -19,7 +19,7 @@
 #define MARK(TYPE)          \
  public:                    \
   TYPE() { MARK_FUNCTION; } \
-  virtual ~TYPE() { MARK_FUNCTION; }
+  ~TYPE() { MARK_FUNCTION; }
 
 struct ConnectorContext {
   int data;
