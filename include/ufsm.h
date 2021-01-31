@@ -14,8 +14,6 @@ struct IsSameType<T, T> {
   constexpr explicit operator bool() { return true; }
 };
 
-static constexpr void *NoTransit() { return nullptr; }
-
 template <typename NewState>
 static void *Constructor() {
   return new NewState;
@@ -27,25 +25,21 @@ struct ContextContainer {
 
 }  // namespace detail
 
-struct Event {};
-
 class Transition {
  private:
   using CallType = void *();
   CallType &state_creator_;
+  static void *NoTransit() { return nullptr; }
 
  public:
-  explicit Transition(CallType &call = detail::NoTransit)
-      : state_creator_(call) {}
+  explicit Transition(CallType &call = NoTransit) : state_creator_(call) {}
   void *operator()() { return state_creator_(); }
-  explicit operator bool() const {
-    return &state_creator_ != &detail::NoTransit;
-  }
+  explicit operator bool() const { return &state_creator_ != &NoTransit; }
 };
 
 class NoTransit : public Transition {};
 
-template <typename StateBase, typename StateContext>
+template <typename StateBase, typename StateContext = int>
 class State : public detail::ContextContainer {
  private:
   // Prevent external modification
@@ -98,8 +92,7 @@ class Fsm {
   template <typename E>
   void ProcessEvent(const E &event) {
     if (!state_) return;
-    auto transition = state_->React(event);
-    if (transition) {
+    if (Transition transition = state_->React(event)) {
       delete state_;
       Transit(transition());
     }

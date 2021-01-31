@@ -27,7 +27,7 @@ struct ConnectorContext {
 
 class Connector : public ufsm::State<Connector, ConnectorContext> {
  public:
-  struct EvConnect : public ufsm::Event {
+  struct EvConnect {
     MARK(EvConnect)
   };
   virtual ufsm::Transition React(const EvConnect &event) {
@@ -35,7 +35,7 @@ class Connector : public ufsm::State<Connector, ConnectorContext> {
     return ufsm::NoTransit{};
   }
 
-  struct EvConnectSuccess : public ufsm::Event {
+  struct EvConnectSuccess {
     MARK(EvConnectSuccess)
   };
   virtual ufsm::Transition React(const EvConnectSuccess &event) {
@@ -43,7 +43,7 @@ class Connector : public ufsm::State<Connector, ConnectorContext> {
     return ufsm::NoTransit{};
   }
 
-  struct EvConnectFailure : public ufsm::Event {
+  struct EvConnectFailure {
     MARK(EvConnectFailure)
   };
   virtual ufsm::Transition React(const EvConnectFailure &event) {
@@ -51,7 +51,7 @@ class Connector : public ufsm::State<Connector, ConnectorContext> {
     return ufsm::NoTransit{};
   }
 
-  struct EvDisconnect : public ufsm::Event {
+  struct EvDisconnect {
     MARK(EvDisconnect)
   };
   virtual ufsm::Transition React(const EvDisconnect &event) {
@@ -59,7 +59,7 @@ class Connector : public ufsm::State<Connector, ConnectorContext> {
     return ufsm::NoTransit{};
   }
 
-  struct EvDisconnectSuccess : public ufsm::Event {
+  struct EvDisconnectSuccess {
     MARK(EvDisconnectSuccess)
   };
   virtual ufsm::Transition React(const EvDisconnectSuccess &event) {
