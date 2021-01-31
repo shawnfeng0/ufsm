@@ -8,13 +8,21 @@
 #include <map>
 #include <string>
 
-class Cmdline {
+class CmdProcessor {
  public:
-  std::string Dump() {
+  std::string DumpCmd(const std::string &delimiter = " ") {
     std::string res;
     for (auto &i : cmd_list_) {
-      res += i.first + ": ";
-      res += i.second.first + "\n";
+      res += i.first + delimiter;
+    }
+    res.erase(res.length() - delimiter.length());
+    return res;
+  }
+  std::string DumpHelp(const std::string &delimiter = "\n") {
+    std::string res;
+    for (auto &i : cmd_list_) {
+      res += i.first + " - ";
+      res += i.second.first + delimiter;
     }
     return res;
   }
