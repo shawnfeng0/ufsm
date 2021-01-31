@@ -26,33 +26,28 @@ static void *Constructor() {
 
 }  // namespace detail
 
-class Transition {
- private:
-  using CallType = void *();
-  CallType &state_creator_;
-  static void *NoTransit() { return nullptr; }
-
+template <typename T, typename StateContext = int>
+class StateBase : public detail::ContextContainer<StateContext> {
  public:
-  explicit Transition(CallType &call = NoTransit) : state_creator_(call) {}
-  void *operator()() { return state_creator_(); }
-  explicit operator bool() const { return &state_creator_ != &NoTransit; }
-};
-
-class NoTransit : public Transition {};
-
-template <typename StateBase, typename StateContext = int>
-class State : public detail::ContextContainer<StateContext> {
- private:
-  // Prevent external modification
-  using detail::ContextContainer<StateContext>::ctx_ptr_;
-
- public:
-  using BaseType = StateBase;
+  using BaseType = T;
   using ContextType = StateContext;
+
+  class Transition {
+   private:
+    using CallType = void *();
+    CallType &state_creator_;
+    static void *NoTransit() { return nullptr; }
+
+   public:
+    explicit Transition(CallType &call = NoTransit) : state_creator_(call) {}
+    void *operator()() { return state_creator_(); }
+    explicit operator bool() const { return &state_creator_ != &NoTransit; }
+  };
+  class NoTransit : public Transition {};
 
  protected:
   // Only allow inheritance, no construction
-  virtual ~State() = default;
+  virtual ~StateBase() = default;
 
   ContextType &Context() { return *ctx_ptr_; }
 
@@ -62,19 +57,23 @@ class State : public detail::ContextContainer<StateContext> {
                   "");
     return Transition{detail::Constructor<NewState>};
   }
+
+ private:
+  // Prevent external modification
+  using detail::ContextContainer<StateContext>::ctx_ptr_;
 };
 
-template <typename StateBase>
+template <typename FsmStateBase>
 class Fsm {
  private:
-  StateBase *state_{};
-  typename StateBase::ContextType context_{};
+  FsmStateBase *state_{};
+  typename FsmStateBase::ContextType context_{};
 
   void Transit(void *next_state) {
     if (!next_state) return;
     state_ = reinterpret_cast<decltype(state_)>(next_state);
     // Set context
-    detail::ContextContainer<typename StateBase::ContextType> &ctx = *state_;
+    detail::ContextContainer<typename FsmStateBase::ContextType> &ctx = *state_;
     ctx.ctx_ptr_ = &context_;
   }
 
@@ -82,18 +81,19 @@ class Fsm {
   template <typename InitState>
   void Initiate() {
     static_assert(detail::IsSameType<typename InitState::BaseType,
-                                     typename StateBase::BaseType>{},
+                                     typename FsmStateBase::BaseType>{},
                   "");
     delete state_;
     Transit(detail::Constructor<InitState>());
   }
 
-  const typename StateBase::ContextType &Context() const { return context_; }
+  const typename FsmStateBase::ContextType &Context() const { return context_; }
 
   template <typename E>
   void ProcessEvent(const E &event) {
     if (!state_) return;
-    if (Transition transition = state_->React(event)) {
+    typename FsmStateBase::Transition transition = state_->React(event);
+    if (transition) {
       delete state_;
       Transit(transition());
     }

@@ -25,46 +25,46 @@ struct ConnectorContext {
   int data;
 };
 
-class Connector : public ufsm::State<Connector, ConnectorContext> {
+class Connector : public ufsm::StateBase<Connector, ConnectorContext> {
  public:
   struct EvConnect {
     MARK(EvConnect)
   };
-  virtual ufsm::Transition React(const EvConnect &event) {
+  virtual Transition React(const EvConnect &event) {
     MARK_FUNCTION;
-    return ufsm::NoTransit{};
+    return NoTransit{};
   }
 
   struct EvConnectSuccess {
     MARK(EvConnectSuccess)
   };
-  virtual ufsm::Transition React(const EvConnectSuccess &event) {
+  virtual Transition React(const EvConnectSuccess &event) {
     MARK_FUNCTION;
-    return ufsm::NoTransit{};
+    return NoTransit{};
   }
 
   struct EvConnectFailure {
     MARK(EvConnectFailure)
   };
-  virtual ufsm::Transition React(const EvConnectFailure &event) {
+  virtual Transition React(const EvConnectFailure &event) {
     MARK_FUNCTION;
-    return ufsm::NoTransit{};
+    return NoTransit{};
   }
 
   struct EvDisconnect {
     MARK(EvDisconnect)
   };
-  virtual ufsm::Transition React(const EvDisconnect &event) {
+  virtual Transition React(const EvDisconnect &event) {
     MARK_FUNCTION;
-    return ufsm::NoTransit{};
+    return NoTransit{};
   }
 
   struct EvDisconnectSuccess {
     MARK(EvDisconnectSuccess)
   };
-  virtual ufsm::Transition React(const EvDisconnectSuccess &event) {
+  virtual Transition React(const EvDisconnectSuccess &event) {
     MARK_FUNCTION;
-    return ufsm::NoTransit{};
+    return NoTransit{};
   }
 };
 
@@ -74,7 +74,7 @@ class Connected;
 class Disconnected;
 
 class Disconnected : public Connector {
-  ufsm::Transition React(const EvConnect &event) override {
+  Transition React(const EvConnect &event) override {
     Context().data++;
     return Transit<Connecting>();
   }
@@ -82,11 +82,11 @@ class Disconnected : public Connector {
 };
 
 class Connecting : public Connector {
-  ufsm::Transition React(const EvConnectSuccess &event) override {
+  Transition React(const EvConnectSuccess &event) override {
     Context().data++;
     return Transit<Connected>();
   }
-  ufsm::Transition React(const EvConnectFailure &event) override {
+  Transition React(const EvConnectFailure &event) override {
     Context().data++;
     return Transit<Disconnected>();
   }
@@ -94,7 +94,7 @@ class Connecting : public Connector {
 };
 
 class Connected : public Connector {
-  ufsm::Transition React(const EvDisconnect &event) override {
+  Transition React(const EvDisconnect &event) override {
     Context().data++;
     return Transit<Disconnecting>();
   }
@@ -102,7 +102,7 @@ class Connected : public Connector {
 };
 
 class Disconnecting : public Connector {
-  ufsm::Transition React(const EvDisconnect &event) override {
+  Transition React(const EvDisconnect &event) override {
     Context().data++;
     return Transit<Disconnected>();
   }
