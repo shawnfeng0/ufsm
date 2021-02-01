@@ -18,4 +18,7 @@ class Connector : public ufsm::StateBase<Connector> {
 
   struct EvDisconnectSuccess {};
   virtual Transition React(const EvDisconnectSuccess &) { return NoTransit{}; }
+
+  struct EvTick {};
+  virtual Transition React(const EvTick &) { return NoTransit{}; }
 };

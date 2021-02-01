@@ -29,12 +29,40 @@ class Connecting : public Connector {
 };
 
 class Connected : public Connector {
+ public:
+  Connected() {
+    MARK_FUNCTION;
+    sub_fsm_.Initiate<Working>();
+  }
+  ~Connected() override { MARK_FUNCTION; }
+
   Transition React(const EvDisconnect &event) override {
     Context()++;
     return Transit<Disconnecting>();
   }
 
-  MARK_CLASS(Connected);
+  Transition React(const EvTick &event) override {
+    MARK_FUNCTION;
+    // Distribute the event to the sub-state machine for processing.
+    sub_fsm_.ProcessEvent(event);
+    return NoTransit{};
+  }
+
+  class Using : public ufsm::StateBase<Using> {
+   public:
+    virtual Transition React(const EvTick &event) { return NoTransit{}; }
+    MARK_CLASS(Using);
+  };
+
+  class Working : public Using {
+    Transition React(const EvTick &event) override {
+      MARK_FUNCTION;
+      return NoTransit{};
+    }
+    MARK_CLASS(Working);
+  };
+
+  ufsm::Fsm<Using> sub_fsm_;
 };
 
 class Disconnecting : public Connector {
@@ -57,6 +85,7 @@ int main() {
            [&]() { connector.ProcessEvent(Connector::EvConnectSuccess{}); })
       .Add("connect_failure",
            [&]() { connector.ProcessEvent(Connector::EvConnectFailure{}); })
+      .Add("tick", [&]() { connector.ProcessEvent(Connector::EvTick{}); })
       .Add("disconnect_success",
            [&]() { connector.ProcessEvent(Connector::EvDisconnectSuccess{}); });
 
