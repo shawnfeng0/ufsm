@@ -1,4 +1,4 @@
-#include <ufsm.h>
+#include <ufsm/ufsm.h>
 
 #include "../cmdline.h"
 #include "connector_state_machine.h"
