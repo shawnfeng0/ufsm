@@ -24,12 +24,13 @@ static void *Constructor() {
   return new T;
 }
 
+class EmptyContext {};
+
 }  // namespace detail
 
-template <typename T, typename StateContext = int>
+template <typename StateContext = detail::EmptyContext>
 class StateBase : public detail::ContextContainer<StateContext> {
  public:
-  using BaseType = T;
   using ContextType = StateContext;
 
   class Transition {
@@ -53,8 +54,6 @@ class StateBase : public detail::ContextContainer<StateContext> {
 
   template <typename NewState>
   Transition Transit() {
-    static_assert(detail::IsSameType<typename NewState::BaseType, BaseType>{},
-                  "");
     return Transition{detail::Constructor<NewState>};
   }
 
@@ -80,9 +79,6 @@ class Fsm {
  public:
   template <typename InitState>
   void Initiate() {
-    static_assert(detail::IsSameType<typename InitState::BaseType,
-                                     typename FsmStateBase::BaseType>{},
-                  "");
     delete state_;
     Transit(detail::Constructor<InitState>());
   }

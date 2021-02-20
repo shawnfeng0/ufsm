@@ -2,7 +2,7 @@
 
 #include "../log.h"
 
-class Connector : public ufsm::StateBase<Connector> {
+class Connector : public ufsm::StateBase<int> {
  public:
   struct EvConnect {};
   virtual Transition React(const EvConnect &) { return NoTransit{}; }
