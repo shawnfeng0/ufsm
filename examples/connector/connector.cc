@@ -9,7 +9,7 @@ class Connected;
 class Disconnected;
 
 class Disconnected : public Connector {
-  Transition React(const EvConnect &event) override {
+  ufsm::Transition React(const EvConnect &event) override {
     Context()++;
     return Transit<Connecting>();
   }
@@ -17,11 +17,11 @@ class Disconnected : public Connector {
 };
 
 class Connecting : public Connector {
-  Transition React(const EvConnectSuccess &event) override {
+  ufsm::Transition React(const EvConnectSuccess &event) override {
     Context()++;
     return Transit<Connected>();
   }
-  Transition React(const EvConnectFailure &event) override {
+  ufsm::Transition React(const EvConnectFailure &event) override {
     Context()++;
     return Transit<Disconnected>();
   }
@@ -36,28 +36,30 @@ class Connected : public Connector {
   }
   ~Connected() override { MARK_FUNCTION; }
 
-  Transition React(const EvDisconnect &event) override {
+  ufsm::Transition React(const EvDisconnect &event) override {
     Context()++;
     return Transit<Disconnecting>();
   }
 
-  Transition React(const EvTick &event) override {
+  ufsm::Transition React(const EvTick &event) override {
     MARK_FUNCTION;
     // Distribute the event to the sub-state machine for processing.
     sub_fsm_.ProcessEvent(event);
-    return NoTransit{};
+    return ufsm::NoTransit{};
   }
 
   class Using : public ufsm::StateBase<Using> {
    public:
-    virtual Transition React(const EvTick &event) { return NoTransit{}; }
+    virtual ufsm::Transition React(const EvTick &event) {
+      return ufsm::NoTransit{};
+    }
     MARK_CLASS(Using);
   };
 
   class Working : public Using {
-    Transition React(const EvTick &event) override {
+    ufsm::Transition React(const EvTick &event) override {
       MARK_FUNCTION;
-      return NoTransit{};
+      return ufsm::NoTransit{};
     }
     MARK_CLASS(Working);
   };
@@ -66,7 +68,7 @@ class Connected : public Connector {
 };
 
 class Disconnecting : public Connector {
-  Transition React(const EvDisconnectSuccess &event) override {
+  ufsm::Transition React(const EvDisconnectSuccess &event) override {
     Context()++;
     return Transit<Disconnected>();
   }

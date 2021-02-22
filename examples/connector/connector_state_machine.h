@@ -5,20 +5,30 @@
 class Connector : public ufsm::StateBase<int> {
  public:
   struct EvConnect {};
-  virtual Transition React(const EvConnect &) { return NoTransit{}; }
+  virtual ufsm::Transition React(const EvConnect &) {
+    return ufsm::NoTransit{};
+  }
 
   struct EvConnectSuccess {};
-  virtual Transition React(const EvConnectSuccess &) { return NoTransit{}; }
+  virtual ufsm::Transition React(const EvConnectSuccess &) {
+    return ufsm::NoTransit{};
+  }
 
   struct EvConnectFailure {};
-  virtual Transition React(const EvConnectFailure &) { return NoTransit{}; }
+  virtual ufsm::Transition React(const EvConnectFailure &) {
+    return ufsm::NoTransit{};
+  }
 
   struct EvDisconnect {};
-  virtual Transition React(const EvDisconnect &) { return NoTransit{}; }
+  virtual ufsm::Transition React(const EvDisconnect &) {
+    return ufsm::NoTransit{};
+  }
 
   struct EvDisconnectSuccess {};
-  virtual Transition React(const EvDisconnectSuccess &) { return NoTransit{}; }
+  virtual ufsm::Transition React(const EvDisconnectSuccess &) {
+    return ufsm::NoTransit{};
+  }
 
   struct EvTick {};
-  virtual Transition React(const EvTick &) { return NoTransit{}; }
+  virtual ufsm::Transition React(const EvTick &) { return ufsm::NoTransit{}; }
 };
