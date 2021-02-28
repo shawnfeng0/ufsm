@@ -1,5 +1,5 @@
 #pragma once
-#include <ufsm/polymorphic_cast.h>
+#include <ufsm/detail/polymorphic_cast.h>
 #include <ufsm/result.h>
 
 namespace ufsm {

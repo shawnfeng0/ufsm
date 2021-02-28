@@ -19,12 +19,24 @@ struct List<HeadType, TailTypes...> {
   using tail_types = List<TailTypes...>;
 };
 
+using EmptyList = struct List<>;
+
 template <typename... Types>
-struct ListLength {
+struct IsList {
+  static constexpr bool value = false;
+};
+
+template <typename... Types>
+struct IsList<List<Types...>> {
+  static constexpr bool value = true;
+};
+
+template <typename... Types>
+struct Size {
   static constexpr unsigned value = sizeof...(Types);
 };
 template <typename... Types>
-struct ListLength<List<Types...>> {
+struct Size<List<Types...>> {
   static constexpr unsigned value = sizeof...(Types);
 };
 

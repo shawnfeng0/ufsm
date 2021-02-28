@@ -7,12 +7,12 @@ struct IdProvider {
   const void* p_custom_id_;
 };
 
-template <class MostDerived>
+template <typename MostDerived>
 struct IdHolder {
   static IdProvider id_provider_;
 };
 
-template <class MostDerived>
+template <typename MostDerived>
 IdProvider IdHolder<MostDerived>::id_provider_;
 
 struct RttiPolicy {
@@ -35,7 +35,7 @@ struct RttiPolicy {
     IdProviderType id_provider_;
   };
 
-  template <class MostDerived, class Base>
+  template <typename MostDerived, typename Base>
   class RttiDerivedType : public Base {
    public:
     static IdType static_type() { return &IdHolder<MostDerived>::id_provider_; }

@@ -9,12 +9,12 @@ namespace detail {
 
 template <typename T1, typename T2>
 struct IsSameType {
-  constexpr explicit operator bool() { return false; }
+  constexpr explicit operator bool() const { return false; }
 };
 
 template <typename T>
 struct IsSameType<T, T> {
-  constexpr explicit operator bool() { return true; }
+  constexpr explicit operator bool() const { return true; }
 };
 
 template <typename T>

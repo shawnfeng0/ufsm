@@ -5,7 +5,7 @@
 #pragma once
 
 #include <ufsm/event_base.h>
-#include <ufsm/rtti_policy.h>
+#include <ufsm/type/rtti_policy.h>
 
 namespace ufsm {
 
