@@ -33,7 +33,7 @@ class NodeStateBase : public StateBase {
       bool performFullExit) = 0;
 };
 
-template <class OrthogonalRegionCount>
+template <OrthogonalPositionType OrthogonalRegionCount = 1>
 class NodeState : public NodeStateBase {
   using BaseType = NodeStateBase;
 
@@ -41,8 +41,7 @@ class NodeState : public NodeStateBase {
   //////////////////////////////////////////////////////////////////////////
   explicit NodeState(typename RttiPolicy::IdProviderType idProvider)
       : BaseType(idProvider) {
-    for (OrthogonalPositionType pos = 0; pos < OrthogonalRegionCount::value;
-         ++pos) {
+    for (OrthogonalPositionType pos = 0; pos < OrthogonalRegionCount; ++pos) {
       p_inner_states_[pos] = 0;
     }
   }
@@ -54,13 +53,13 @@ class NodeState : public NodeStateBase {
 
   void AddInnerState(OrthogonalPositionType position,
                      StateBaseType* pInnerState) {
-    assert((position < OrthogonalRegionCount::value) &&
+    assert((position < OrthogonalRegionCount) &&
            (p_inner_states_[position] == 0));
     p_inner_states_[position] = pInnerState;
   }
 
   void RemoveInnerState(OrthogonalPositionType position) {
-    assert(position < OrthogonalRegionCount::value);
+    assert(position < OrthogonalRegionCount);
     p_inner_states_[position] = 0;
   }
 
@@ -102,7 +101,7 @@ class NodeState : public NodeStateBase {
   static bool is_not_null(const StateBaseType* pInner) {
     return pInner != nullptr;
   }
-  std::array<StateBaseType*, OrthogonalRegionCount::value> p_inner_states_{};
+  std::array<StateBaseType*, OrthogonalRegionCount> p_inner_states_{};
 };
 
 }  // namespace detail

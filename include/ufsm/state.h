@@ -21,21 +21,16 @@ struct MakeList {
       typename type::If<type::IsList<T>::value, T, type::List<T>>::Type;
 };
 
+struct NoInnerInitial {};
+
 template <typename MostDerived, typename Context, typename InnerInitial>
 struct StateBaseType {
- private:
-  using InnerInitialList = typename MakeList<InnerInitial>::type;
-  using InnerInitialListSize = type::Size<InnerInitialList>;
-
  public:
   using type = typename type::If<
-      type::Empty<InnerInitialList>::value,
+      std::is_same<detail::NoInnerInitial, InnerInitial>::value,
       typename RttiPolicy::RttiDerivedType<MostDerived, LeafState>,
-      typename RttiPolicy::RttiDerivedType<
-          MostDerived, NodeState<InnerInitialListSize>>>::Type;
+      typename RttiPolicy::RttiDerivedType<MostDerived, NodeState<1>>>::Type;
 };
-
-struct NoInnerInitial {};
 
 }  // namespace detail
 

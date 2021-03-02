@@ -1,29 +1,16 @@
-//
-// Created by fs on 2021-02-22.
-//
-
+#include <ufsm/aux_macro.h>
 #include <ufsm/state.h>
 #include <ufsm/state_machine.h>
 #include <ufsm/type/list.h>
 
 #include "../log.h"
+#include "StateA.h"
+#include "StateB.h"
+#include "StateC.h"
+#include "TestMachine.h"
 
 using namespace ufsm::type;
 using namespace std;
-
-struct StateA;
-struct TestMachine : ufsm::StateMachine<TestMachine, StateA> {
-  MARK_CLASS(TestMachine);
-};
-
-struct StateAA;
-struct StateA : ufsm::State<StateA, TestMachine, StateAA> {
-  MARK_CLASS(StateA);
-};
-
-struct StateAA : ufsm::State<StateAA, StateA> {
-  MARK_CLASS(StateAA);
-};
 
 int main(int argc, char *argv[]) {
   LOG << Size<List<int, float, void, void *>>::value << std::endl;
@@ -35,6 +22,7 @@ int main(int argc, char *argv[]) {
   TestMachine machine;
 
   machine.Initiate();
+  machine.ProcessEvent(EventA{});
 
   return 0;
 }

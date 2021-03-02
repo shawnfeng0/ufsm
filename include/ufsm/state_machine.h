@@ -57,6 +57,22 @@ class StateMachine {
     }
   }
 
+  void Terminate() {
+    Terminator guard(*this, 0);
+    TerminateFunction (*this)();
+    guard.dismiss();
+  }
+
+  bool Terminated() const { return p_outermost_state_ == nullptr; }
+
+  void ProcessEvent(const detail::EventBase& evt) {
+    if (SendEvent(evt) == detail::do_defer_event) {
+      deferred_event_queue_.emplace_back(evt.shared_from_this());
+    }
+
+    ProcessQueuedEvents();
+  }
+
   template <class State>
   void Add(const std::shared_ptr<State>& pState) {
     // The second dummy argument is necessary because the call to the
@@ -84,6 +100,8 @@ class StateMachine {
     p_outermost_state_ = nullptr;
   }
 
+  void UnconsumedEvent(const detail::EventBase&) {}
+
  protected:
   StateMachine()
       : current_states_end_(current_states_.end()),
@@ -95,14 +113,6 @@ class StateMachine {
   // This destructor was only made virtual so that that
   // polymorphic_downcast can be used to cast to MostDerived.
   virtual ~StateMachine() { TerminateImpl(false); }
-
-  void Terminate() {
-    Terminator guard(*this, 0);
-    TerminateFunction (*this)();
-    guard.dismiss();
-  }
-
-  bool Terminated() const { return p_outermost_state_ == 0; }
 
  private:  // implementation
   void InitialConstruct() {
@@ -172,7 +182,7 @@ class StateMachine {
     guard.dismiss();
 
     if (reactionResult == detail::do_forward_event) {
-      polymorphic_downcast<MostDerived*>(this)->unconsumed_event(evt);
+      polymorphic_downcast<MostDerived*>(this)->UnconsumedEvent(evt);
     }
 
     return reactionResult;
@@ -189,26 +199,26 @@ class StateMachine {
     }
   }
 
-  void TerminateImpl(bool performFullExit) {
+  void TerminateImpl(bool perform_full_exit) {
     perform_full_exit_ = true;
 
     if (!Terminated()) {
-      TerminateImpl(*p_outermost_state_, performFullExit);
+      TerminateImpl(*p_outermost_state_, perform_full_exit);
     }
 
     event_queue_.clear();
     deferred_event_queue_.clear();
   }
 
-  void TerminateImpl(detail::StateBase& theState, bool performFullExit) {
+  void TerminateImpl(detail::StateBase& the_state, bool perform_full_exit) {
     is_innermost_common_outer_ = false;
 
     // If pOutermostUnstableState_ == 0, we know for sure that
-    // currentStates_.size() > 0, otherwise theState couldn't be alive any
+    // currentStates_.size() > 0, otherwise the_state couldn't be alive any
     // more
     if (p_outermost_unstable_state_ != nullptr) {
-      theState.RemoveFromStateList(
-          current_states_end_, p_outermost_unstable_state_, performFullExit);
+      the_state.RemoveFromStateList(
+          current_states_end_, p_outermost_unstable_state_, perform_full_exit);
     }
     // Optimization: We want to find out whether currentStates_ has size 1
     // and if yes use the optimized implementation below. Since
@@ -220,12 +230,13 @@ class StateMachine {
       // The following optimization is only correct for a stable machine
       // without orthogonal regions.
       LeafStatePtrType& pState = *current_states_end_;
-      pState->ExitImpl(pState, p_outermost_unstable_state_, performFullExit);
+      pState->ExitImpl(pState, p_outermost_unstable_state_, perform_full_exit);
     } else {
       assert(current_states_.size() > 1);
       // The machine is stable and there are multiple innermost states
-      theState.RemoveFromStateList(
-          ++current_states_end_, p_outermost_unstable_state_, performFullExit);
+      the_state.RemoveFromStateList(++current_states_end_,
+                                    p_outermost_unstable_state_,
+                                    perform_full_exit);
     }
   }
 
