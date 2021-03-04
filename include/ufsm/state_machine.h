@@ -47,6 +47,7 @@ class StateMachine {
   using NodeStateBasePtrType = typename detail::StateBase::NodeStateBasePtrType;
   using LeafStatePtrType = typename detail::StateBase::LeafStatePtrType;
   using StateListType = typename detail::StateBase::StateListType;
+  using ContextTypeList = mp::List<>;
 
   void Initiate() {
     Terminate();
@@ -71,6 +72,38 @@ class StateMachine {
     }
 
     ProcessQueuedEvents();
+  }
+
+  void ExitImpl(InnerContextPtrType&,
+                typename detail::StateBase::NodeStateBasePtrType&, bool) {}
+
+  void SetOutermostUnstableState(
+      typename detail::StateBase::NodeStateBasePtrType&
+          p_outermost_unstable_state) {
+    p_outermost_unstable_state = nullptr;
+  }
+
+  OutermostContextBaseType& OutermostContextBase() { return *this; }
+
+  const OutermostContextBaseType& OutermostContextBase() const { return *this; }
+
+  void TerminateAsReaction(detail::StateBase& theState) {
+    TerminateImpl(theState, perform_full_exit_);
+    p_outermost_unstable_state_ = nullptr;
+  }
+
+  void TerminateAsPartOfTransit(detail::StateBase& theState) {
+    TerminateImpl(theState, perform_full_exit_);
+    is_innermost_common_outer_ = true;
+  }
+
+  void TerminateAsPartOfTransit(StateMachine&) {
+    TerminateImpl(*p_outermost_state_, perform_full_exit_);
+    is_innermost_common_outer_ = true;
+  }
+
+  detail::ReactionResult ReactImpl(const detail::EventBase&) {
+    return detail::do_forward_event;
   }
 
   template <class State>

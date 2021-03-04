@@ -16,7 +16,7 @@ class LeafState : public StateBase {
   explicit LeafState(typename RttiPolicy::IdProviderType id_provider)
       : BaseType(id_provider) {}
 
-  ~LeafState() override = default;
+  ~LeafState() = default;
 
  public:
   void set_list_position(

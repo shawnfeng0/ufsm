@@ -9,34 +9,52 @@
 #include "TestMachine.h"
 
 struct StateAA;
-FSM_STATE_DEFINE(StateA, TestMachine, StateAA) { MARK_CLASS(StateA); };
+FSM_STATE_DEFINE(StateA, TestMachine, StateAA) {
+  std::string state_a_context_string;
+  MARK_CLASS(StateA);
+};
 
 struct StateAAA;
 FSM_STATE_DEFINE(StateAA, StateA, StateAAA) { MARK_CLASS(StateAA); };
 
 // struct StateAAAA;
 struct StateAAAA;
+struct StateABAA;
 FSM_STATE_DEFINE(StateAAA, StateAA, StateAAAA) { MARK_CLASS(StateAAA); };
 FSM_STATE_DEFINE(StateAAAA, StateAAA) {
   using reactions =
-      ufsm::type::List<ufsm::Reaction<EventA>, ufsm::Reaction<EventB>>;
+      ufsm::mp::List<ufsm::Reaction<EventA>, ufsm::Reaction<EventB>>;
   ufsm::Result React(const EventA& event) {
+    Context<StateA>().state_a_context_string = "test";
     MARK_FUNCTION;
-    return ufsm::Result::consumed;
+    return Transit<StateABAA>();
   }
 
   ufsm::Result React(const EventB& event) {
     MARK_FUNCTION;
     return ufsm::Result::consumed;
   }
-  MARK_CLASS(StateAAAA);
+
+ public:
+  StateAAAA() { MARK_FUNCTION; }
+  ~StateAAAA() { MARK_FUNCTION; }
 };
 
 struct StateABA;
 FSM_STATE_DEFINE(StateAB, StateA, StateABA) { MARK_CLASS(StateAB); };
 
 struct StateABAA;
-FSM_STATE_DEFINE(StateABA, StateAB, StateABAA) { MARK_CLASS(StateABA); };
+FSM_STATE_DEFINE(StateABA, StateAB, StateABAA) {
+  using reactions = ufsm::mp::List<ufsm::Reaction<EventB>>;
+  ufsm::Result React(const EventB& event) {
+    std::cout << "context: " << Context<StateA>().state_a_context_string
+              << std::endl;
+    MARK_FUNCTION;
+    return Transit<StateAAAA>();
+  }
+
+  MARK_CLASS(StateABA);
+};
 
 struct StateABAAA;
 FSM_STATE_DEFINE(StateABAA, StateABA, StateABAAA) { MARK_CLASS(StateABAA); };

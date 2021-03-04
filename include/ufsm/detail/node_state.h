@@ -21,7 +21,7 @@ class NodeStateBase : public StateBase {
   explicit NodeStateBase(typename RttiPolicy::IdProviderType id_provider)
       : BaseType(id_provider) {}
 
-  ~NodeStateBase() override = default;
+  ~NodeStateBase() = default;
 
  public:
   using StateBaseType = BaseType;
@@ -46,7 +46,7 @@ class NodeState : public NodeStateBase {
     }
   }
 
-  ~NodeState() override = default;
+  ~NodeState() = default;
 
  public:
   using StateBaseType = typename BaseType::StateBaseType;

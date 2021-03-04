@@ -17,7 +17,9 @@ class NodeStateBase;
 
 using OrthogonalPositionType = unsigned char;
 
-class StateBase : detail::Noncopyable, RttiPolicy::RttiBaseType {
+class StateBase : public std::enable_shared_from_this<StateBase>,
+                  private detail::Noncopyable,
+                  RttiPolicy::RttiBaseType {
  public:
   using base_type = RttiPolicy::RttiBaseType;
 
@@ -27,7 +29,7 @@ class StateBase : detail::Noncopyable, RttiPolicy::RttiBaseType {
  protected:
   explicit StateBase(typename RttiPolicy::IdProviderType id_provider)
       : base_type(id_provider), deferred_events_(false) {}
-  virtual ~StateBase() = default;
+  ~StateBase() = default;
 
  protected:
   void defer_event() { deferred_events_ = true; }
@@ -44,6 +46,9 @@ class StateBase : detail::Noncopyable, RttiPolicy::RttiBaseType {
   using NodeStateBasePtrType = std::shared_ptr<NodeStateBase>;
   using LeafStatePtrType = std::shared_ptr<LeafState>;
   using StateListType = std::list<LeafStatePtrType>;
+
+  std::shared_ptr<StateBase> get_shared_ptr() { return shared_from_this(); }
+  std::weak_ptr<StateBase> get_weak_ptr() { return weak_from_this(); }
 
   virtual void RemoveFromStateList(
       typename StateListType::iterator& statesEnd,
