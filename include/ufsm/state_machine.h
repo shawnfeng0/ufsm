@@ -117,8 +117,8 @@ class StateMachine {
     p_outermost_unstable_state_ = nullptr;
   }
 
-  void TerminateAsPartOfTransit(detail::StateBase& theState) {
-    TerminateImpl(theState, perform_full_exit_);
+  void TerminateAsPartOfTransit(detail::StateBase& the_state) {
+    TerminateImpl(the_state, perform_full_exit_);
     is_innermost_common_outer_ = true;
   }
 
@@ -132,24 +132,24 @@ class StateMachine {
   }
 
   template <class State>
-  void Add(const std::shared_ptr<State>& pState) {
+  void Add(const std::shared_ptr<State>& p_state) {
     // The second dummy argument is necessary because the call to the
     // overloaded function add_impl would otherwise be ambiguous.
     NodeStateBasePtrType pNewOutermostUnstableStateCandidate =
-        AddImpl(pState, *pState);
+        AddImpl(p_state, *p_state);
 
-    if (is_innermost_common_outer_ ||
-        (p_outermost_unstable_state_.get() == pState->State::OuterStatePtr())) {
+    if (is_innermost_common_outer_ || (p_outermost_unstable_state_.get() ==
+                                       p_state->State::OuterStatePtr())) {
       is_innermost_common_outer_ = false;
       p_outermost_unstable_state_ = pNewOutermostUnstableStateCandidate;
     }
   }
 
   void AddInnerState(detail::OrthogonalPositionType position,
-                     detail::StateBase* pOutermostState) {
+                     detail::StateBase* p_outermost_state) {
     assert(position == 0);
     position;
-    p_outermost_state_ = pOutermostState;
+    p_outermost_state_ = p_outermost_state;
   }
 
   void RemoveInnerState(detail::OrthogonalPositionType position) {
@@ -225,34 +225,33 @@ class StateMachine {
   detail::ReactionResult SendEvent(const detail::EventBase& evt) {
     Terminator guard(*this, &evt);
     assert(p_outermost_unstable_state_ == nullptr);
-    const typename detail::RttiPolicy::IdType eventType = evt.dynamic_type();
-    detail::ReactionResult reactionResult = detail::do_forward_event;
+    detail::ReactionResult reaction_result = detail::do_forward_event;
 
     for (auto pState = current_states_.begin();
-         (reactionResult == detail::do_forward_event) &&
+         (reaction_result == detail::do_forward_event) &&
          (pState != current_states_end_);
          ++pState) {
       // CAUTION: The following statement could modify our state list!
       // We must not continue iterating if the event was consumed
-      reactionResult = detail::SendFunction(**pState, evt)();
+      reaction_result = detail::SendFunction(**pState, evt)();
     }
 
     guard.dismiss();
 
-    if (reactionResult == detail::do_forward_event) {
+    if (reaction_result == detail::do_forward_event) {
       polymorphic_downcast<MostDerived*>(this)->UnconsumedEvent(evt);
     }
 
-    return reactionResult;
+    return reaction_result;
   }
 
   void ProcessQueuedEvents() {
     while (!event_queue_.empty()) {
-      EventBasePtrType pEvent = event_queue_.front();
+      EventBasePtrType p_event = event_queue_.front();
       event_queue_.pop_front();
 
-      if (SendEvent(*pEvent) == detail::do_defer_event) {
-        deferred_event_queue_.push_back(pEvent);
+      if (SendEvent(*p_event) == detail::do_defer_event) {
+        deferred_event_queue_.push_back(p_event);
       }
     }
   }
@@ -287,8 +286,9 @@ class StateMachine {
       // The machine is stable and there is exactly one innermost state.
       // The following optimization is only correct for a stable machine
       // without orthogonal regions.
-      LeafStatePtrType& pState = *current_states_end_;
-      pState->ExitImpl(pState, p_outermost_unstable_state_, perform_full_exit);
+      LeafStatePtrType& p_state = *current_states_end_;
+      p_state->ExitImpl(p_state, p_outermost_unstable_state_,
+                        perform_full_exit);
     } else {
       assert(current_states_.size() > 1);
       // The machine is stable and there are multiple innermost states
@@ -298,23 +298,23 @@ class StateMachine {
     }
   }
 
-  NodeStateBasePtrType AddImpl(const LeafStatePtrType& pState,
+  NodeStateBasePtrType AddImpl(const LeafStatePtrType& p_state,
                                detail::LeafState&) {
     if (current_states_end_ == current_states_.end()) {
-      pState->set_list_position(
-          current_states_.insert(current_states_end_, pState));
+      p_state->set_list_position(
+          current_states_.insert(current_states_end_, p_state));
     } else {
-      *current_states_end_ = pState;
-      pState->set_list_position(current_states_end_);
+      *current_states_end_ = p_state;
+      p_state->set_list_position(current_states_end_);
       ++current_states_end_;
     }
 
     return nullptr;
   }
 
-  NodeStateBasePtrType AddImpl(const NodeStateBasePtrType& pState,
+  NodeStateBasePtrType AddImpl(const NodeStateBasePtrType& p_state,
                                detail::StateBase&) {
-    return pState;
+    return p_state;
   }
 
   typedef std::list<EventBasePtrType> EventQueueType;

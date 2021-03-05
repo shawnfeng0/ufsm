@@ -137,11 +137,11 @@ class State : public detail::StateBaseType<MostDerived,
     DeepConstruct(&outermost_context_base, outermost_context_base);
   }
 
-  static void DeepConstruct(const ContextPtrType& pContext,
-                            OutermostContextBaseType& outermostContextBase) {
-    const InnerContextPtrType pInnerContext(
-        ShallowConstruct(pContext, outermostContextBase));
-    DeepConstructInner(pInnerContext, outermostContextBase);
+  static void DeepConstruct(const ContextPtrType& p_context,
+                            OutermostContextBaseType& outermost_context_base) {
+    const InnerContextPtrType p_inner_context(
+        ShallowConstruct(p_context, outermost_context_base));
+    DeepConstructInner(p_inner_context, outermost_context_base);
   }
 
   static InnerContextPtrType ShallowConstruct(
@@ -153,10 +153,10 @@ class State : public detail::StateBaseType<MostDerived,
     return p_inner_context;
   }
 
-  void SetContext(const ContextPtrType& pContext) {
-    assert(pContext != nullptr);
-    p_context_ = pContext;
-    BaseType::SetContext(OrthogonalPosition::value, pContext);
+  void SetContext(const ContextPtrType& p_context) {
+    assert(p_context != nullptr);
+    p_context_ = p_context;
+    BaseType::SetContext(OrthogonalPosition::value, p_context);
   }
 
   static void DeepConstructInner(
@@ -187,9 +187,9 @@ class State : public detail::StateBaseType<MostDerived,
   struct DeepConstructInnerImplNonEmpty {
     template <typename Inner>
     static void DeepConstructInnerImpl(
-        const InnerContextPtrType& pInnerContext,
-        OutermostContextBaseType& outermostContextBase) {
-      Inner::DeepConstruct(pInnerContext, outermostContextBase);
+        const InnerContextPtrType& p_inner_context,
+        OutermostContextBaseType& outermost_context_base) {
+      Inner::DeepConstruct(p_inner_context, outermost_context_base);
     }
   };
 
@@ -302,7 +302,7 @@ class State : public detail::StateBaseType<MostDerived,
 
   template <class DestinationState, class TransitionContext,
             class TransitionAction>
-  Result TransitImpl(const TransitionAction& transitionAction) {
+  Result TransitImpl(const TransitionAction& transition_action) {
     constexpr int termination_state_position =
         mp::FindIf<ContextTypeList,
                    mp::Contains<typename DestinationState::ContextTypeList,
@@ -322,7 +322,7 @@ class State : public detail::StateBaseType<MostDerived,
         p_common_context->OutermostContextBase());
 
     outermost_context_base.TerminateAsPartOfTransit(termination_state);
-    transitionAction(*p_common_context);
+    transition_action(*p_common_context);
 
     using ContextListType =
         typename detail::MakeContextList<CommonContextType,
