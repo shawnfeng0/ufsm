@@ -83,6 +83,31 @@ class StateMachine {
     p_outermost_unstable_state = nullptr;
   }
 
+  // Returns a reference to the context identified by the template
+  // parameter. This can either be _this_ object or one of its direct or
+  // indirect contexts.
+  template <class ContextType>
+  ContextType& Context() {
+    // As we are in the outermost context here, only this object can be
+    // returned.
+    return *polymorphic_downcast<MostDerived*>(this);
+  }
+
+  template <class ContextType>
+  const ContextType& Context() const {
+    // As we are in the outermost context here, only this object can be
+    // returned.
+    return *polymorphic_downcast<const MostDerived*>(this);
+  }
+
+  OutermostContextType& OutermostContext() {
+    return *polymorphic_downcast<MostDerived*>(this);
+  }
+
+  const OutermostContextType& OutermostContext() const {
+    return *polymorphic_downcast<const MostDerived*>(this);
+  }
+
   OutermostContextBaseType& OutermostContextBase() { return *this; }
 
   const OutermostContextBaseType& OutermostContextBase() const { return *this; }
