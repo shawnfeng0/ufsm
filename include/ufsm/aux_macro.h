@@ -9,3 +9,5 @@
 
 #define FSM_STATE_DEFINE(StateName, Context, ...) \
   struct StateName : ufsm::State<StateName, Context, ##__VA_ARGS__>
+
+#define FSM_EVENT_DEFINE(EventName) struct EventName : ufsm::Event<EventName>
