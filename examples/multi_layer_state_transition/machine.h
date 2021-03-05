@@ -13,6 +13,6 @@ struct EventC : ufsm::Event<EventC> {};
 struct EventD : ufsm::Event<EventD> {};
 
 struct StateA;
-struct TestMachine : ufsm::StateMachine<TestMachine, StateA> {
-  MARK_CLASS(TestMachine);
+struct Machine : ufsm::StateMachine<Machine, StateA> {
+  MARK_CLASS(Machine);
 };

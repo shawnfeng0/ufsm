@@ -7,13 +7,13 @@
 #include "StateA.h"
 #include "StateB.h"
 #include "StateC.h"
-#include "TestMachine.h"
+#include "machine.h"
 
 using namespace ufsm::mp;
 using namespace std;
 
 int main(int argc, char *argv[]) {
-  TestMachine machine;
+  Machine machine;
 
   machine.Initiate();
   machine.ProcessEvent(EventA{});

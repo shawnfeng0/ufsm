@@ -6,10 +6,10 @@
 
 #include <ufsm/aux_macro.h>
 
-#include "TestMachine.h"
+#include "machine.h"
 
 struct StateAA;
-FSM_STATE_DEFINE(StateA, TestMachine, StateAA) {
+FSM_STATE_DEFINE(StateA, Machine, StateAA) {
   std::string state_a_context_string;
   MARK_CLASS(StateA);
 };
