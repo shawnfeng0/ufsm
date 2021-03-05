@@ -6,4 +6,4 @@
 
 #include "machine.h"
 
-FSM_STATE_DEFINE(StateC, Machine) { MARK_CLASS(StateC); };
+FSM_STATE(StateC, Machine) { MARK_CLASS(StateC); };

@@ -6,27 +6,27 @@
 
 #include "../log.h"
 
-FSM_EVENT_DEFINE(EvConnect){};
-FSM_EVENT_DEFINE(EvConnectSuccess){};
-FSM_EVENT_DEFINE(EvConnectFailure){};
-FSM_EVENT_DEFINE(EvDisconnect){};
-FSM_EVENT_DEFINE(EvDisconnectSuccess){};
-FSM_EVENT_DEFINE(EvTick){};
+FSM_EVENT(EvConnect){};
+FSM_EVENT(EvConnectSuccess){};
+FSM_EVENT(EvConnectFailure){};
+FSM_EVENT(EvDisconnect){};
+FSM_EVENT(EvDisconnectSuccess){};
+FSM_EVENT(EvTick){};
 
 struct Disconnected;
-struct Connector : ufsm::StateMachine<Connector, Disconnected> {};
+FSM_STATE_MACHINE(Connector, Disconnected){};
 
 struct Connected;
 struct Connecting;
 struct Disconnecting;
 
-FSM_STATE_DEFINE(Disconnected, Connector) {
+FSM_STATE(Disconnected, Connector) {
   using reactions = ufsm::mp::List<ufsm::Reaction<EvConnect>>;
   ufsm::Result React(const EvConnect &event) { return Transit<Connecting>(); }
   MARK_CLASS(Disconnected);
 };
 
-FSM_STATE_DEFINE(Connecting, Connector) {
+FSM_STATE(Connecting, Connector) {
   using reactions = ufsm::mp::List<ufsm::Reaction<EvConnectFailure>,
                                    ufsm::Reaction<EvConnectSuccess>>;
   ufsm::Result React(const EvConnectSuccess &event) {
@@ -39,7 +39,7 @@ FSM_STATE_DEFINE(Connecting, Connector) {
 };
 
 struct Working;
-FSM_STATE_DEFINE(Connected, Connector, Working) {
+FSM_STATE(Connected, Connector, Working) {
   MARK_CLASS(Connected);
 
   using reactions = ufsm::mp::List<ufsm::Reaction<EvDisconnect>>;
@@ -48,7 +48,7 @@ FSM_STATE_DEFINE(Connected, Connector, Working) {
   }
 };
 
-FSM_STATE_DEFINE(Working, Connected) {
+FSM_STATE(Working, Connected) {
   using reactions = ufsm::mp::List<ufsm::Reaction<EvTick>>;
   ufsm::Result React(const EvTick &event) {
     MARK_FUNCTION;
@@ -57,7 +57,7 @@ FSM_STATE_DEFINE(Working, Connected) {
   MARK_CLASS(Working);
 };
 
-FSM_STATE_DEFINE(Disconnecting, Connector) {
+FSM_STATE(Disconnecting, Connector) {
   using reactions = ufsm::mp::List<ufsm::Reaction<EvDisconnectSuccess>>;
   ufsm::Result React(const EvDisconnectSuccess &event) {
     return Transit<Disconnected>();

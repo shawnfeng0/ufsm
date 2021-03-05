@@ -9,19 +9,19 @@
 #include "machine.h"
 
 struct StateAA;
-FSM_STATE_DEFINE(StateA, Machine, StateAA) {
+FSM_STATE(StateA, Machine, StateAA) {
   std::string state_a_context_string;
   MARK_CLASS(StateA);
 };
 
 struct StateAAA;
-FSM_STATE_DEFINE(StateAA, StateA, StateAAA) { MARK_CLASS(StateAA); };
+FSM_STATE(StateAA, StateA, StateAAA) { MARK_CLASS(StateAA); };
 
 // struct StateAAAA;
 struct StateAAAA;
 struct StateABAA;
-FSM_STATE_DEFINE(StateAAA, StateAA, StateAAAA) { MARK_CLASS(StateAAA); };
-FSM_STATE_DEFINE(StateAAAA, StateAAA) {
+FSM_STATE(StateAAA, StateAA, StateAAAA) { MARK_CLASS(StateAAA); };
+FSM_STATE(StateAAAA, StateAAA) {
   using reactions =
       ufsm::mp::List<ufsm::Reaction<EventA>, ufsm::Reaction<EventB>>;
   ufsm::Result React(const EventA& event) {
@@ -41,10 +41,10 @@ FSM_STATE_DEFINE(StateAAAA, StateAAA) {
 };
 
 struct StateABA;
-FSM_STATE_DEFINE(StateAB, StateA, StateABA) { MARK_CLASS(StateAB); };
+FSM_STATE(StateAB, StateA, StateABA) { MARK_CLASS(StateAB); };
 
 struct StateABAA;
-FSM_STATE_DEFINE(StateABA, StateAB, StateABAA) {
+FSM_STATE(StateABA, StateAB, StateABAA) {
   using reactions = ufsm::mp::List<ufsm::Reaction<EventB>>;
   ufsm::Result React(const EventB& event) {
     std::cout << "context: " << Context<StateA>().state_a_context_string
@@ -57,12 +57,12 @@ FSM_STATE_DEFINE(StateABA, StateAB, StateABAA) {
 };
 
 struct StateABAAA;
-FSM_STATE_DEFINE(StateABAA, StateABA, StateABAAA) { MARK_CLASS(StateABAA); };
-FSM_STATE_DEFINE(StateABAAA, StateABAA) { MARK_CLASS(StateABAAA); };
+FSM_STATE(StateABAA, StateABA, StateABAAA) { MARK_CLASS(StateABAA); };
+FSM_STATE(StateABAAA, StateABAA) { MARK_CLASS(StateABAAA); };
 
 struct StateABBA;
-FSM_STATE_DEFINE(StateABB, StateAB, StateABBA) { MARK_CLASS(StateABB); };
+FSM_STATE(StateABB, StateAB, StateABBA) { MARK_CLASS(StateABB); };
 
 struct StateABBAA;
-FSM_STATE_DEFINE(StateABBA, StateABB, StateABBAA) { MARK_CLASS(StateABBA); };
-FSM_STATE_DEFINE(StateABBAA, StateABBA) { MARK_CLASS(StateABBAA); };
+FSM_STATE(StateABBA, StateABB, StateABBAA) { MARK_CLASS(StateABBA); };
+FSM_STATE(StateABBAA, StateABBA) { MARK_CLASS(StateABBAA); };
