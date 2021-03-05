@@ -48,7 +48,7 @@ class StateBase : public std::enable_shared_from_this<StateBase>,
   using StateListType = std::list<LeafStatePtrType>;
 
   std::shared_ptr<StateBase> get_shared_ptr() { return shared_from_this(); }
-  std::weak_ptr<StateBase> get_weak_ptr() { return weak_from_this(); }
+  std::weak_ptr<StateBase> get_weak_ptr() { return shared_from_this(); }
 
   virtual void RemoveFromStateList(
       typename StateListType::iterator& statesEnd,
