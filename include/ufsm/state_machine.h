@@ -148,13 +148,13 @@ class StateMachine {
   void AddInnerState(detail::OrthogonalPositionType position,
                      detail::StateBase* p_outermost_state) {
     assert(position == 0);
-    position;
+    (void)position;
     p_outermost_state_ = p_outermost_state;
   }
 
   void RemoveInnerState(detail::OrthogonalPositionType position) {
     assert(position == 0);
-    position;
+    (void)position;
     p_outermost_state_ = nullptr;
   }
 
