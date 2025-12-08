@@ -6,6 +6,7 @@
 
 #include <ufsm/event.h>
 #include <ufsm/state_machine.h>
+#include <ufsm/type/list.h>
 
 struct EventA : ufsm::Event<EventA> {};
 struct EventB : ufsm::Event<EventB> {};
@@ -14,5 +15,6 @@ struct EventD : ufsm::Event<EventD> {};
 
 struct StateA;
 struct Machine : ufsm::StateMachine<Machine, StateA> {
+  using EventList = ufsm::mp::List<EventA, EventB, EventC, EventD>;
   MARK_CLASS(Machine);
 };

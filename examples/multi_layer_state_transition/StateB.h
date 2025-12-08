@@ -6,6 +6,5 @@
 
 #include "machine.h"
 
-struct StateBA;
 FSM_STATE(StateB, Machine, StateBA) { MARK_CLASS(StateB); };
 FSM_STATE(StateBA, Machine) { MARK_CLASS(StateBA); };

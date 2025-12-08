@@ -8,29 +8,24 @@
 
 #include "machine.h"
 
-struct StateAA;
 FSM_STATE(StateA, Machine, StateAA) {
   std::string state_a_context_string;
   MARK_CLASS(StateA);
 };
 
-struct StateAAA;
 FSM_STATE(StateAA, StateA, StateAAA) { MARK_CLASS(StateAA); };
 
 // struct StateAAAA;
-struct StateAAAA;
 struct StateABAA;
 FSM_STATE(StateAAA, StateAA, StateAAAA) { MARK_CLASS(StateAAA); };
 FSM_STATE(StateAAAA, StateAAA) {
-  using reactions =
-      ufsm::mp::List<ufsm::Reaction<EventA>, ufsm::Reaction<EventB>>;
-  ufsm::Result React(const EventA& event) {
+  ufsm::Result React(const EventA&) {
     Context<StateA>().state_a_context_string = "test";
     MARK_FUNCTION;
     return Transit<StateABAA>();
   }
 
-  ufsm::Result React(const EventB& event) {
+  ufsm::Result React(const EventB&) {
     MARK_FUNCTION;
     return ufsm::Result::consumed;
   }
@@ -40,13 +35,10 @@ FSM_STATE(StateAAAA, StateAAA) {
   ~StateAAAA() { MARK_FUNCTION; }
 };
 
-struct StateABA;
 FSM_STATE(StateAB, StateA, StateABA) { MARK_CLASS(StateAB); };
 
-struct StateABAA;
 FSM_STATE(StateABA, StateAB, StateABAA) {
-  using reactions = ufsm::mp::List<ufsm::Reaction<EventB>>;
-  ufsm::Result React(const EventB& event) {
+  ufsm::Result React(const EventB&) {
     std::cout << "context: " << Context<StateA>().state_a_context_string
               << std::endl;
     MARK_FUNCTION;
@@ -56,13 +48,10 @@ FSM_STATE(StateABA, StateAB, StateABAA) {
   MARK_CLASS(StateABA);
 };
 
-struct StateABAAA;
 FSM_STATE(StateABAA, StateABA, StateABAAA) { MARK_CLASS(StateABAA); };
 FSM_STATE(StateABAAA, StateABAA) { MARK_CLASS(StateABAAA); };
 
-struct StateABBA;
 FSM_STATE(StateABB, StateAB, StateABBA) { MARK_CLASS(StateABB); };
 
-struct StateABBAA;
 FSM_STATE(StateABBA, StateABB, StateABBAA) { MARK_CLASS(StateABBA); };
 FSM_STATE(StateABBAA, StateABBA) { MARK_CLASS(StateABBAA); };

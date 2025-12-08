@@ -6,7 +6,9 @@
 
 #include <ufsm/detail/polymorphic_cast.h>
 #include <ufsm/detail/state_base.h>
+#include <ufsm/detail/leaf_state.h>
 #include <ufsm/event_base.h>
+#include <ufsm/type/list.h>
 
 namespace ufsm {
 

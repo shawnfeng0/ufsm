@@ -12,7 +12,7 @@
 using namespace ufsm::mp;
 using namespace std;
 
-int main(int argc, char *argv[]) {
+int main() {
   Machine machine;
 
   machine.Initiate();
