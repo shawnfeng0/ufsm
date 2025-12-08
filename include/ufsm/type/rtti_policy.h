@@ -3,47 +3,35 @@
 namespace ufsm {
 namespace detail {
 
-struct IdProvider {
-  const void* p_custom_id_;
-};
-
+// Each type gets a unique address via static member
 template <typename MostDerived>
 struct IdHolder {
-  static IdProvider id_provider_;
+  static inline char id_tag_;  // C++17 inline variable
 };
 
-template <typename MostDerived>
-IdProvider IdHolder<MostDerived>::id_provider_;
-
 struct RttiPolicy {
-  typedef const void* IdType;
-  typedef const IdProvider* IdProviderType;
+  using IdType = const void*;
 
   class RttiBaseType {
    public:
-    typedef RttiPolicy::IdType IdType;
-
-    IdType dynamic_type() const { return id_provider_; }
+    IdType dynamic_type() const noexcept { return id_; }
 
    protected:
-    explicit RttiBaseType(IdProviderType id_provider)
-        : id_provider_(id_provider) {}
-
+    explicit RttiBaseType(IdType id) : id_(id) {}
     ~RttiBaseType() = default;
 
    private:
-    IdProviderType id_provider_;
+    IdType id_;
   };
 
   template <typename MostDerived, typename Base>
   class RttiDerivedType : public Base {
    public:
-    static IdType static_type() { return &IdHolder<MostDerived>::id_provider_; }
+    static IdType static_type() noexcept { return &IdHolder<MostDerived>::id_tag_; }
 
    protected:
-    ////////////////////////////////////////////////////////////////////////
     ~RttiDerivedType() = default;
-    RttiDerivedType() : Base(&IdHolder<MostDerived>::id_provider_) {}
+    RttiDerivedType() : Base(&IdHolder<MostDerived>::id_tag_) {}
   };
 };
 

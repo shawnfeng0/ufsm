@@ -1,7 +1,3 @@
-//
-// Created by fs on 2021-02-26.
-//
-
 #pragma once
 
 namespace ufsm {
@@ -13,8 +9,8 @@ class Noncopyable {
   Noncopyable& operator=(const Noncopyable&) = delete;
 
  protected:
-  Noncopyable() = default;
-  ~Noncopyable() = default;
+  Noncopyable() noexcept = default;
+  ~Noncopyable() noexcept = default;
 };
 
 }  // namespace detail

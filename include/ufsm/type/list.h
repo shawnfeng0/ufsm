@@ -1,69 +1,48 @@
-//
-// Created by fs on 2021-02-23.
-//
-
 #pragma once
-#include <type_traits>
 
-// Reference: https://www.cnblogs.com/apocelipes/p/11289840.html
+#include <tuple>
+#include <type_traits>
+#include <utility>
 
 namespace ufsm {
+
+// C++17 stdlib compatibility for C++11/14 stdlib
+template <typename...>
+using void_t = void;
+
 namespace mp {
 
-struct Na {
-  using type = Na;
-};
+using std::index_sequence;
+using std::make_index_sequence;
+
+struct Na {};
 
 namespace placeholders {
 using _ = Na;
 }
 
 template <typename... Types>
-struct List;
-template <>
-struct List<> {};
+struct List {};
 template <typename HeadType, typename... TailTypes>
-struct List<HeadType, TailTypes...> {
-  using head_type = HeadType;
-  using tail_types = List<TailTypes...>;
-};
+struct List<HeadType, TailTypes...> {};
 
+template <typename TypeList>
+struct Size;
 template <typename... Types>
-struct IsList {
-  static constexpr bool value = false;
-};
-
-template <typename... Types>
-struct IsList<List<Types...>> {
-  static constexpr bool value = true;
-};
-
-template <typename... Types>
-struct Size {
-  static constexpr unsigned value = sizeof...(Types);
-};
-template <typename... Types>
-struct Size<List<Types...>> {
-  static constexpr unsigned value = sizeof...(Types);
-};
+struct Size<List<Types...>> : std::integral_constant<unsigned, sizeof...(Types)> {};
 
 template <typename TypeList, unsigned int index>
 struct At;
-template <typename HeadType, typename... Types>
-struct At<List<HeadType, Types...>, 0> {
-  using type = HeadType;
-};
-template <typename HeadType, typename... Types, unsigned int index>
-struct At<List<HeadType, Types...>, index> {
-  static_assert(index < sizeof...(Types) + 1, "i out of range");
-  using type = typename At<List<Types...>, index - 1>::type;
+template <typename... Types, unsigned int index>
+struct At<List<Types...>, index> {
+  using type = typename std::tuple_element<index, std::tuple<Types...>>::type;
 };
 
 template <typename TypeList>
 struct Front;
-template <typename... Types>
-struct Front<List<Types...>> {
-  using type = typename At<List<Types...>, 0>::type;
+template <typename Head, typename... Tail>
+struct Front<List<Head, Tail...>> {
+  using type = Head;
 };
 
 template <typename Types, typename T>
@@ -71,13 +50,6 @@ struct PushFront;
 template <typename... Types, typename T>
 struct PushFront<List<Types...>, T> {
   using type = List<T, Types...>;
-};
-
-template <typename Types, typename T>
-struct PushBack;
-template <typename... Types, typename T>
-struct PushBack<List<Types...>, T> {
-  using type = List<Types..., T>;
 };
 
 template <typename Types>
@@ -91,54 +63,25 @@ struct PopFront<List<>> {
   using type = List<>;
 };
 
-template <typename Types>
-struct Empty;
-template <>
-struct Empty<List<>> {
-  constexpr explicit operator bool() const { return true; }
-  static constexpr bool value = true;
-};
-template <typename... Types>
-struct Empty<List<Types...>> {
-  constexpr explicit operator bool() const { return false; }
-  static constexpr bool value = false;
-};
-
 template <bool Condition, typename T1, typename T2>
-struct If;
-template <typename T1, typename T2>
-struct If<true, T1, T2> {
-  using type = T1;
-};
-template <typename T1, typename T2>
-struct If<false, T1, T2> {
-  using type = T2;
-};
+using If = typename std::conditional<Condition, T1, T2>::type;
 
 template <typename T1>
 struct SameAs {
   template <typename T2>
-  struct apply : std::is_same<T1, T2> {};
+  using apply = std::is_same<T1, T2>;
 };
 
 template <typename TypeList, typename Predicate>
 struct FindIf;
-template <typename Predicate>
-struct FindIf<List<>, Predicate> {
-  static constexpr int value = -1;
-};
-template <typename... Types, typename Predicate>
-struct FindIf<List<Types...>, Predicate> {
- private:
-  static constexpr int increase(int raw) { return raw >= 0 ? raw + 1 : raw; }
 
- public:
-  static constexpr int value =
-      If<Predicate::template apply<typename Front<List<Types...>>::type>::value,
-         std::integral_constant<int, 0>,
-         std::integral_constant<
-             int, increase(FindIf<typename PopFront<List<Types...>>::type,
-                                  Predicate>::value)>>::type::value;
+template <typename Predicate, typename... Types>
+struct FindIf<List<Types...>, Predicate> {
+  static constexpr int value = []() {
+    int idx = 0;
+    bool found = ((Predicate::template apply<Types>::value ? true : (idx++, false)) || ...);
+    return found ? idx : -1;
+  }();
 };
 
 template <typename TypeList, typename T>
@@ -146,11 +89,7 @@ struct Find : FindIf<TypeList, SameAs<T>> {};
 
 template <typename TypeList, typename T>
 struct Contains {
- private:
-  static constexpr bool is_non_negative(int n) { return n >= 0; }
-
- public:
-  static constexpr bool value = is_non_negative(Find<TypeList, T>::value);
+  static constexpr bool value = Find<TypeList, T>::value >= 0;
 };
 template <typename TypeList>
 struct Contains<TypeList, placeholders::_> {  // For function
@@ -162,52 +101,64 @@ struct Contains<TypeList, placeholders::_> {  // For function
 
 template <typename T>
 struct Reverse;
-template <>
-struct Reverse<List<>> {
-  using type = List<>;
-};
-template <typename T, typename... Args>
-struct Reverse<List<T, Args...>> {
-  using type =
-      typename PushBack<typename Reverse<List<Args...>>::type, T>::type;
-};
 
-template <typename Types, typename ResultTypes, int begin, int end, int cur>
-struct RangeImpl;
-template <typename... Types, typename ResultTypes, int begin, int end>
-struct RangeImpl<List<Types...>, ResultTypes, begin, end, end> {
-  using type = ResultTypes;
-};
-template <typename... Types, typename ResultTypes, int begin, int end, int cur>
-struct RangeImpl<List<Types...>, ResultTypes, begin, end, cur> {
-  static_assert(begin >= 0 && begin < end, "");
-
+template <typename... Types>
+struct Reverse<List<Types...>> {
  private:
-  using InnerList = List<Types...>;
-  static constexpr bool index_valid() { return cur >= begin && cur < end; }
+  template <std::size_t... I>
+  static List<typename std::tuple_element<sizeof...(Types) - 1 - I, std::tuple<Types...>>::type...> helper(
+      index_sequence<I...>);
 
  public:
-  using type =
-      typename If<index_valid(),
-                  typename RangeImpl<
-                      InnerList,
-                      typename PushBack<
-                          ResultTypes, typename At<InnerList, cur>::type>::type,
-                      begin, end, cur + 1>::type,
-                  typename RangeImpl<InnerList, ResultTypes, begin, end,
-                                     cur + 1>::type>::type;
+  using type = decltype(helper(make_index_sequence<sizeof...(Types)>{}));
 };
 
 template <typename Types, int begin, int end>
 struct Range;
+
 template <typename... Types, int begin, int end>
 struct Range<List<Types...>, begin, end> {
  private:
   static constexpr int inner_end = end < 0 ? sizeof...(Types) : end;
+  static constexpr std::size_t count = inner_end - begin;
+
+  template <std::size_t... I>
+  static List<typename std::tuple_element<I + begin, std::tuple<Types...>>::type...> helper(index_sequence<I...>);
 
  public:
-  using type =
-      typename RangeImpl<List<Types...>, List<>, begin, inner_end, 0>::type;
+  using type = decltype(helper(make_index_sequence<count>{}));
+};
+
+template <typename List, template <typename> class Op>
+struct Transform;
+
+template <typename... Types, template <typename> class Op>
+struct Transform<List<Types...>, Op> {
+  using type = List<typename Op<Types>::type...>;
+};
+
+template <typename TypeList, template <typename> class Predicate>
+struct Filter;
+
+template <template <typename> class Predicate, typename... Types>
+struct Filter<List<Types...>, Predicate> {
+ private:
+  template <typename T>
+  using MaybeWrap = If<Predicate<T>::value, List<T>, List<>>;
+
+  template <typename... Lists>
+  struct Concat {
+    using type = List<>;
+  };
+  template <typename... Ts>
+  struct Concat<List<Ts...>> {
+    using type = List<Ts...>;
+  };
+  template <typename... Ts, typename... Us, typename... Rest>
+  struct Concat<List<Ts...>, List<Us...>, Rest...> : Concat<List<Ts..., Us...>, Rest...> {};
+
+ public:
+  using type = typename Concat<MaybeWrap<Types>...>::type;
 };
 
 }  // namespace mp
