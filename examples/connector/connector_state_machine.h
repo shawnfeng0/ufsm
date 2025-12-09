@@ -1,6 +1,6 @@
 #pragma once
 
-#include <ufsm/aux_macro.h>
+#include <ufsm/macros.h>
 #include <ufsm/state.h>
 #include <ufsm/state_machine.h>
 
@@ -13,7 +13,6 @@ FSM_EVENT(EvDisconnect){};
 FSM_EVENT(EvDisconnectSuccess){};
 FSM_EVENT(EvTick){};
 
-struct Disconnected;
 FSM_STATE_MACHINE(Connector, Disconnected){};
 
 struct Connected;
@@ -22,35 +21,34 @@ struct Disconnecting;
 
 FSM_STATE(Disconnected, Connector) {
   using reactions = ufsm::mp::List<ufsm::Reaction<EvConnect>>;
-  ufsm::Result React(const EvConnect &event) { return Transit<Connecting>(); }
+  ufsm::Result React(const EvConnect &) { return Transit<Connecting>(); }
   MARK_CLASS(Disconnected);
 };
 
 FSM_STATE(Connecting, Connector) {
   using reactions = ufsm::mp::List<ufsm::Reaction<EvConnectFailure>,
                                    ufsm::Reaction<EvConnectSuccess>>;
-  ufsm::Result React(const EvConnectSuccess &event) {
+  ufsm::Result React(const EvConnectSuccess &) {
     return Transit<Connected>();
   }
-  ufsm::Result React(const EvConnectFailure &event) {
+  ufsm::Result React(const EvConnectFailure &) {
     return Transit<Disconnected>();
   }
   MARK_CLASS(Connecting);
 };
 
-struct Working;
 FSM_STATE(Connected, Connector, Working) {
   MARK_CLASS(Connected);
 
   using reactions = ufsm::mp::List<ufsm::Reaction<EvDisconnect>>;
-  ufsm::Result React(const EvDisconnect &event) {
+  ufsm::Result React(const EvDisconnect &) {
     return Transit<Disconnecting>();
   }
 };
 
 FSM_STATE(Working, Connected) {
   using reactions = ufsm::mp::List<ufsm::Reaction<EvTick>>;
-  ufsm::Result React(const EvTick &event) {
+  ufsm::Result React(const EvTick &) {
     MARK_FUNCTION;
     return ufsm::detail::consumed;
   }
@@ -59,7 +57,7 @@ FSM_STATE(Working, Connected) {
 
 FSM_STATE(Disconnecting, Connector) {
   using reactions = ufsm::mp::List<ufsm::Reaction<EvDisconnectSuccess>>;
-  ufsm::Result React(const EvDisconnectSuccess &event) {
+  ufsm::Result React(const EvDisconnectSuccess &) {
     return Transit<Disconnected>();
   }
   MARK_CLASS(Disconnecting);

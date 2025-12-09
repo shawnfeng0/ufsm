@@ -1,4 +1,4 @@
-#include <ufsm/aux_macro.h>
+#include <ufsm/macros.h>
 #include <ufsm/state.h>
 #include <ufsm/state_machine.h>
 #include <ufsm/type/list.h>

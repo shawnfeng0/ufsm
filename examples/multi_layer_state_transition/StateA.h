@@ -4,21 +4,17 @@
 
 #pragma once
 
-#include <ufsm/aux_macro.h>
+#include <ufsm/macros.h>
 
 #include "machine.h"
 
-struct StateAA;
 FSM_STATE(StateA, Machine, StateAA) {
   std::string state_a_context_string;
   MARK_CLASS(StateA);
 };
 
-struct StateAAA;
 FSM_STATE(StateAA, StateA, StateAAA) { MARK_CLASS(StateAA); };
 
-// struct StateAAAA;
-struct StateAAAA;
 struct StateABAA;
 FSM_STATE(StateAAA, StateAA, StateAAAA) { MARK_CLASS(StateAAA); };
 FSM_STATE(StateAAAA, StateAAA) {
@@ -40,10 +36,8 @@ FSM_STATE(StateAAAA, StateAAA) {
   ~StateAAAA() { MARK_FUNCTION; }
 };
 
-struct StateABA;
 FSM_STATE(StateAB, StateA, StateABA) { MARK_CLASS(StateAB); };
 
-struct StateABAA;
 FSM_STATE(StateABA, StateAB, StateABAA) {
   using reactions = ufsm::mp::List<ufsm::Reaction<EventB>>;
   ufsm::Result React(const EventB& event) {
@@ -56,13 +50,10 @@ FSM_STATE(StateABA, StateAB, StateABAA) {
   MARK_CLASS(StateABA);
 };
 
-struct StateABAAA;
 FSM_STATE(StateABAA, StateABA, StateABAAA) { MARK_CLASS(StateABAA); };
 FSM_STATE(StateABAAA, StateABAA) { MARK_CLASS(StateABAAA); };
 
-struct StateABBA;
 FSM_STATE(StateABB, StateAB, StateABBA) { MARK_CLASS(StateABB); };
 
-struct StateABBAA;
 FSM_STATE(StateABBA, StateABB, StateABBAA) { MARK_CLASS(StateABBA); };
 FSM_STATE(StateABBAA, StateABBA) { MARK_CLASS(StateABBAA); };
