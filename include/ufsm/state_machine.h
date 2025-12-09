@@ -1,33 +1,14 @@
-//
-// Created by fs on 2/25/21.
-//
-
 #pragma once
 
-#include <ufsm/detail/polymorphic_cast.h>
+#include <ufsm/detail/leaf_state.h>
 #include <ufsm/detail/state_base.h>
 #include <ufsm/event_base.h>
+#include <ufsm/type/list.h>
+
+#include <cassert>
+#include <deque>
 
 namespace ufsm {
-
-namespace detail {
-
-class SendFunction {
- public:
-  //////////////////////////////////////////////////////////////////////////
-  SendFunction(StateBase& toState, const EventBase& evt)
-      : to_state_(toState), evt_(evt) {}
-
-  Result operator()() { return to_state_.ReactImpl(evt_); }
-
-  SendFunction& operator=(const SendFunction&) = delete;
-
- private:
-  StateBase& to_state_;
-  const EventBase& evt_;
-};
-
-}  // namespace detail
 
 template <typename MostDerived, typename InitialState>
 class StateMachine {
@@ -36,10 +17,8 @@ class StateMachine {
 
   using InnerContextType = MostDerived;
 
-  using InnerOrthogonalPosition =
-      std::integral_constant<detail::OrthogonalPositionType, 0>;
-  using NoOfOrthogonalRegions =
-      std::integral_constant<detail::OrthogonalPositionType, 1>;
+  using InnerOrthogonalPosition = std::integral_constant<detail::OrthogonalPositionType, 0>;
+  using NoOfOrthogonalRegions = std::integral_constant<detail::OrthogonalPositionType, 1>;
 
   using OutermostContextType = MostDerived;
   using OutermostContextBaseType = StateMachine;
@@ -59,12 +38,12 @@ class StateMachine {
   }
 
   void Terminate() {
-    Terminator guard(*this, 0);
-    TerminateFunction (*this)();
+    Terminator guard(*this, nullptr);
+    TerminateImpl(true);
     guard.dismiss();
   }
 
-  bool Terminated() const { return p_outermost_state_ == nullptr; }
+  bool Terminated() const noexcept { return p_outermost_state_ == nullptr; }
 
   void ProcessEvent(const detail::EventBase& evt) {
     if (SendEvent(evt) == detail::do_defer_event) {
@@ -74,12 +53,17 @@ class StateMachine {
     ProcessQueuedEvents();
   }
 
-  void ExitImpl(InnerContextPtrType&,
-                typename detail::StateBase::NodeStateBasePtrType&, bool) {}
+  void ProcessEvent(const EventBasePtrType& p_evt) {
+    if (SendEvent(*p_evt) == detail::do_defer_event) {
+      deferred_event_queue_.push_back(p_evt);
+    }
 
-  void SetOutermostUnstableState(
-      typename detail::StateBase::NodeStateBasePtrType&
-          p_outermost_unstable_state) {
+    ProcessQueuedEvents();
+  }
+
+  void ExitImpl(InnerContextPtrType&, typename detail::StateBase::NodeStateBasePtrType&, bool) {}
+
+  void SetOutermostUnstableState(typename detail::StateBase::NodeStateBasePtrType& p_outermost_unstable_state) {
     p_outermost_unstable_state = nullptr;
   }
 
@@ -88,29 +72,21 @@ class StateMachine {
   // indirect contexts.
   template <class ContextType>
   ContextType& Context() {
-    // As we are in the outermost context here, only this object can be
-    // returned.
-    return *polymorphic_downcast<MostDerived*>(this);
+    return *static_cast<MostDerived*>(this);
   }
 
   template <class ContextType>
   const ContextType& Context() const {
-    // As we are in the outermost context here, only this object can be
-    // returned.
-    return *polymorphic_downcast<const MostDerived*>(this);
+    return *static_cast<const MostDerived*>(this);
   }
 
-  OutermostContextType& OutermostContext() {
-    return *polymorphic_downcast<MostDerived*>(this);
-  }
+  OutermostContextType& OutermostContext() { return *static_cast<MostDerived*>(this); }
 
-  const OutermostContextType& OutermostContext() const {
-    return *polymorphic_downcast<const MostDerived*>(this);
-  }
+  const OutermostContextType& OutermostContext() const { return *static_cast<const MostDerived*>(this); }
 
-  OutermostContextBaseType& OutermostContextBase() { return *this; }
+  OutermostContextBaseType& OutermostContextBase() noexcept { return *this; }
 
-  const OutermostContextBaseType& OutermostContextBase() const { return *this; }
+  const OutermostContextBaseType& OutermostContextBase() const noexcept { return *this; }
 
   void TerminateAsReaction(detail::StateBase& theState) {
     TerminateImpl(theState, perform_full_exit_);
@@ -127,26 +103,19 @@ class StateMachine {
     is_innermost_common_outer_ = true;
   }
 
-  detail::ReactionResult ReactImpl(const detail::EventBase&) {
-    return detail::do_forward_event;
-  }
+  detail::ReactionResult ReactImpl(const detail::EventBase&) { return detail::do_forward_event; }
 
   template <class State>
   void Add(const std::shared_ptr<State>& p_state) {
-    // The second dummy argument is necessary because the call to the
-    // overloaded function add_impl would otherwise be ambiguous.
-    NodeStateBasePtrType pNewOutermostUnstableStateCandidate =
-        AddImpl(p_state, *p_state);
+    NodeStateBasePtrType pNewOutermostUnstableStateCandidate = AddImpl(p_state, *p_state);
 
-    if (is_innermost_common_outer_ || (p_outermost_unstable_state_.get() ==
-                                       p_state->State::OuterStatePtr())) {
+    if (is_innermost_common_outer_ || (p_outermost_unstable_state_.get() == p_state->State::OuterStatePtr())) {
       is_innermost_common_outer_ = false;
       p_outermost_unstable_state_ = pNewOutermostUnstableStateCandidate;
     }
   }
 
-  void AddInnerState(detail::OrthogonalPositionType position,
-                     detail::StateBase* p_outermost_state) {
+  void AddInnerState(detail::OrthogonalPositionType position, detail::StateBase* p_outermost_state) {
     assert(position == 0);
     (void)position;
     p_outermost_state_ = p_outermost_state;
@@ -162,45 +131,21 @@ class StateMachine {
 
  protected:
   StateMachine()
-      : current_states_end_(current_states_.end()),
+      : current_states_active_count_(0),
         p_outermost_state_(nullptr),
         is_innermost_common_outer_(false),
         perform_full_exit_(true),
         p_triggering_event_(nullptr) {}
 
-  // This destructor was only made virtual so that that
-  // polymorphic_downcast can be used to cast to MostDerived.
   virtual ~StateMachine() { TerminateImpl(false); }
 
  private:  // implementation
-  void InitialConstruct() {
-    InitialState::InitialDeepConstruct(
-        *polymorphic_downcast<MostDerived*>(this));
-  }
-
-  class TerminateFunction {
-   public:
-    explicit TerminateFunction(StateMachine& machine) : machine_(machine) {}
-
-    Result operator()() {
-      machine_.TerminateImpl(true);
-      return detail::do_discard_event;  // there is nothing to be consumed
-    }
-
-    TerminateFunction& operator=(const TerminateFunction&) = delete;
-
-   private:
-    StateMachine& machine_;
-  };
-  friend class TerminateFunction;
+  void InitialConstruct() { InitialState::InitialDeepConstruct(*static_cast<MostDerived*>(this)); }
 
   class Terminator {
    public:
-    Terminator(StateMachine& machine,
-               const detail::EventBase* p_new_triggering_event)
-        : machine_(machine),
-          p_old_triggering_event_(machine_.p_triggering_event_),
-          dismissed_(false) {
+    Terminator(StateMachine& machine, const detail::EventBase* p_new_triggering_event)
+        : machine_(machine), p_old_triggering_event_(machine_.p_triggering_event_), dismissed_(false) {
       machine_.p_triggering_event_ = p_new_triggering_event;
     }
 
@@ -227,19 +172,16 @@ class StateMachine {
     assert(p_outermost_unstable_state_ == nullptr);
     detail::ReactionResult reaction_result = detail::do_forward_event;
 
-    for (auto pState = current_states_.begin();
-         (reaction_result == detail::do_forward_event) &&
-         (pState != current_states_end_);
-         ++pState) {
+    for (std::size_t i = 0; (reaction_result == detail::do_forward_event) && (i < current_states_active_count_); ++i) {
       // CAUTION: The following statement could modify our state list!
       // We must not continue iterating if the event was consumed
-      reaction_result = detail::SendFunction(**pState, evt)();
+      reaction_result = current_states_[i]->ReactImpl(evt);
     }
 
     guard.dismiss();
 
     if (reaction_result == detail::do_forward_event) {
-      polymorphic_downcast<MostDerived*>(this)->UnconsumedEvent(evt);
+      static_cast<MostDerived*>(this)->UnconsumedEvent(evt);
     }
 
     return reaction_result;
@@ -274,55 +216,46 @@ class StateMachine {
     // currentStates_.size() > 0, otherwise the_state couldn't be alive any
     // more
     if (p_outermost_unstable_state_ != nullptr) {
-      the_state.RemoveFromStateList(
-          current_states_end_, p_outermost_unstable_state_, perform_full_exit);
+      the_state.RemoveFromStateList(current_states_, current_states_active_count_, p_outermost_unstable_state_,
+                                    perform_full_exit);
     }
     // Optimization: We want to find out whether currentStates_ has size 1
-    // and if yes use the optimized implementation below. Since
-    // list<>::size() is implemented quite inefficiently in some std libs
-    // it is best to just decrement the currentStatesEnd_ here and
-    // increment it again, if the test failed.
-    else if (current_states_.begin() == --current_states_end_) {
+    // and if yes use the optimized implementation below.
+    else if (current_states_active_count_ == 1) {
       // The machine is stable and there is exactly one innermost state.
       // The following optimization is only correct for a stable machine
       // without orthogonal regions.
-      LeafStatePtrType& p_state = *current_states_end_;
-      p_state->ExitImpl(p_state, p_outermost_unstable_state_,
-                        perform_full_exit);
+      current_states_active_count_ = 0;
+      LeafStatePtrType& p_state = current_states_[0];
+      p_state->ExitImpl(p_state, p_outermost_unstable_state_, perform_full_exit);
     } else {
-      assert(current_states_.size() > 1);
+      assert(current_states_active_count_ > 1);
       // The machine is stable and there are multiple innermost states
-      the_state.RemoveFromStateList(++current_states_end_,
-                                    p_outermost_unstable_state_,
+      the_state.RemoveFromStateList(current_states_, current_states_active_count_, p_outermost_unstable_state_,
                                     perform_full_exit);
     }
   }
 
-  NodeStateBasePtrType AddImpl(const LeafStatePtrType& p_state,
-                               detail::LeafState&) {
-    if (current_states_end_ == current_states_.end()) {
-      p_state->set_list_position(
-          current_states_.insert(current_states_end_, p_state));
+  NodeStateBasePtrType AddImpl(const LeafStatePtrType& p_state, detail::LeafState&) {
+    if (current_states_active_count_ == current_states_.size()) {
+      p_state->set_list_index(current_states_.size());
+      current_states_.push_back(p_state);
     } else {
-      *current_states_end_ = p_state;
-      p_state->set_list_position(current_states_end_);
-      ++current_states_end_;
+      current_states_[current_states_active_count_] = p_state;
+      p_state->set_list_index(current_states_active_count_);
     }
-
+    ++current_states_active_count_;
     return nullptr;
   }
 
-  NodeStateBasePtrType AddImpl(const NodeStateBasePtrType& p_state,
-                               detail::StateBase&) {
-    return p_state;
-  }
+  NodeStateBasePtrType AddImpl(const NodeStateBasePtrType& p_state, detail::StateBase&) { return p_state; }
 
-  typedef std::list<EventBasePtrType> EventQueueType;
+  using EventQueueType = std::deque<EventBasePtrType>;
 
   EventQueueType event_queue_;
   EventQueueType deferred_event_queue_;
   StateListType current_states_;
-  typename StateListType::iterator current_states_end_;
+  std::size_t current_states_active_count_;
   detail::StateBase* p_outermost_state_;
   bool is_innermost_common_outer_;
   NodeStateBasePtrType p_outermost_unstable_state_;
