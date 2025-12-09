@@ -72,6 +72,16 @@ class State : public detail::StateBaseType<MostDerived, InnerInitial> {
  protected:
   State() : p_context_(nullptr) {}
 
+  State(ContextType& context) : p_context_(nullptr) {
+    if constexpr (std::is_pointer<ContextPtrType>::value) {
+      p_context_ = &context;
+    } else {
+      p_context_ = std::static_pointer_cast<ContextType>(context.shared_from_this());
+    }
+    assert(p_context_ != nullptr);
+    BaseType::SetContext(OrthogonalPosition::value, p_context_);
+  }
+
   virtual ~State() {
     // As a result of a throwing derived class constructor, this destructor
     // can be called before the context is set.
@@ -114,8 +124,17 @@ class State : public detail::StateBaseType<MostDerived, InnerInitial> {
 
   static InnerContextPtrType ShallowConstruct(const ContextPtrType& pContext,
                                               OutermostContextBaseType& outermostContextBase) {
-    const InnerContextPtrType p_inner_context = std::make_shared<MostDerived>();
-    p_inner_context->SetContext(pContext);
+    InnerContextPtrType p_inner_context;
+    if constexpr (std::is_constructible<MostDerived, ContextType&>::value) {
+      if constexpr (std::is_pointer<ContextPtrType>::value) {
+        p_inner_context = std::make_shared<MostDerived>(*static_cast<ContextType*>(pContext));
+      } else {
+        p_inner_context = std::make_shared<MostDerived>(*pContext);
+      }
+    } else {
+      p_inner_context = std::make_shared<MostDerived>();
+      p_inner_context->SetContext(pContext);
+    }
     outermostContextBase.Add(p_inner_context);
     return p_inner_context;
   }
