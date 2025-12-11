@@ -1,8 +1,6 @@
 #pragma once
 
-#include <ufsm/macros.h>
-#include <ufsm/state.h>
-#include <ufsm/state_machine.h>
+#include <ufsm/ufsm.hpp>
 
 #include "../log.h"
 
@@ -50,7 +48,7 @@ FSM_STATE(Working, Connected) {
   using reactions = ufsm::mp::List<ufsm::Reaction<EvTick>>;
   ufsm::Result React(const EvTick &) {
     MARK_FUNCTION;
-    return ufsm::detail::consumed;
+    return ufsm::detail::do_discard_event;
   }
   MARK_CLASS(Working);
 };

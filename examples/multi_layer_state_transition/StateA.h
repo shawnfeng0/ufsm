@@ -4,8 +4,6 @@
 
 #pragma once
 
-#include <ufsm/macros.h>
-
 #include "machine.h"
 
 FSM_STATE(StateA, Machine, StateAA) {
@@ -28,7 +26,7 @@ FSM_STATE(StateAAAA, StateAAA) {
 
   ufsm::Result React(const EventB& event) {
     MARK_FUNCTION;
-    return ufsm::Result::consumed;
+    return ufsm::Result::do_discard_event;
   }
 
  public:

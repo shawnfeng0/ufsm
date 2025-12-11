@@ -4,8 +4,7 @@
 
 #pragma once
 
-#include <ufsm/event.h>
-#include <ufsm/state_machine.h>
+#include <ufsm/ufsm.hpp>
 
 struct EventA : ufsm::Event<EventA> {};
 struct EventB : ufsm::Event<EventB> {};
