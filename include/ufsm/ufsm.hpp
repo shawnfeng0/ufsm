@@ -89,10 +89,15 @@ class EventBase {
 protected:
     virtual ~EventBase() = default;
 
+    constexpr explicit EventBase(const void* type_id) noexcept : type_id_(type_id) {}
+
 public:
     // Type identity for RTTI-free event dispatch.
     // The returned pointer is unique per concrete event type.
-    virtual const void* TypeId() const noexcept = 0;
+    const void* TypeId() const noexcept { return type_id_; }
+
+private:
+    const void* type_id_;
 };
 
 // Base class for all states, providing common interface
@@ -122,13 +127,11 @@ protected:
 template <typename Derived>
 class Event : public detail::EventBase {
 public:
+    Event() noexcept : detail::EventBase(StaticTypeId()) {}
+
     static const void* StaticTypeId() noexcept {
         static const int tag = 0;
         return &tag;
-    }
-
-    const void* TypeId() const noexcept override {
-        return StaticTypeId();
     }
 };
 
