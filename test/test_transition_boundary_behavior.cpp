@@ -6,7 +6,10 @@
 #include <vector>
 
 FSM_EVENT(TBEventToB) {};
+FSM_EVENT(TBEventToBWithAction) {};
+FSM_EVENT(TBEventToBWithNoArgAction) {};
 FSM_EVENT(TBEventToTop2) {};
+FSM_EVENT(TBEventToTop2WithAction) {};
 
 struct TransitionBoundaryBehaviorTag;
 using TransitionBoundaryBehaviorLog = LifecycleLog<TransitionBoundaryBehaviorTag>;
@@ -24,6 +27,7 @@ struct TBLeafB;
 
 FSM_STATE_MACHINE(TransitionBoundaryMachine, TBParent) {
     int counter = 0;
+    int action_counter = 0;
 };
 
 FSM_STATE(TBParent, TransitionBoundaryMachine, TBLeafA) {
@@ -32,12 +36,23 @@ FSM_STATE(TBParent, TransitionBoundaryMachine, TBLeafA) {
 
 FSM_STATE(TBLeafA, TBParent) {
     using reactions = ufsm::mp::List<
-        ufsm::Reaction<TBEventToB>
+        ufsm::Reaction<TBEventToB>,
+        ufsm::Reaction<TBEventToBWithAction>,
+        ufsm::Reaction<TBEventToBWithNoArgAction>
     >;
 
     ufsm::Result React(const TBEventToB&) {
         OutermostContext().counter++;
         return Transit<TBLeafB>();
+    }
+
+    ufsm::Result React(const TBEventToBWithAction&) {
+        return Transit<TBLeafB>([](TBParent& parent) { parent.OutermostContext().action_counter++; });
+    }
+
+    ufsm::Result React(const TBEventToBWithNoArgAction&) {
+        int* p = &OutermostContext().action_counter;
+        return Transit<TBLeafB>([p]() { (*p)++; });
     }
 
     TRACK_LIFECYCLE(TBLeafA);
@@ -55,6 +70,7 @@ struct TBTop2;
 
 FSM_STATE_MACHINE(TransitionTopLevelMachine, TBTop1) {
     int counter = 0;
+    int action_counter = 0;
 };
 
 FSM_STATE(TBTop1, TransitionTopLevelMachine, TBTop1Leaf) {
@@ -63,12 +79,17 @@ FSM_STATE(TBTop1, TransitionTopLevelMachine, TBTop1Leaf) {
 
 FSM_STATE(TBTop1Leaf, TBTop1) {
     using reactions = ufsm::mp::List<
-        ufsm::Reaction<TBEventToTop2>
+        ufsm::Reaction<TBEventToTop2>,
+        ufsm::Reaction<TBEventToTop2WithAction>
     >;
 
     ufsm::Result React(const TBEventToTop2&) {
         OutermostContext().counter++;
         return Transit<TBTop2>();
+    }
+
+    ufsm::Result React(const TBEventToTop2WithAction&) {
+        return Transit<TBTop2>([](TransitionTopLevelMachine& machine) { machine.action_counter++; });
     }
 
     TRACK_LIFECYCLE(TBTop1Leaf);
@@ -105,5 +126,49 @@ TEST(TransitionBoundaryBehaviorTest, BoundarySemanticsInAllScenarios) {
         ExpectSeq(TransitionBoundaryBehaviorLog::Destruction(), {"TBTop1Leaf", "TBTop1"});
         ExpectSeq(TransitionBoundaryBehaviorLog::Construction(), {"TBTop2"});
         EXPECT_EQ(machine.counter, 1);
+    }
+}
+
+TEST(TransitionActionTest, ExecutesOnLeastCommonAncestorContext) {
+    // Scenario 1: sibling transition under a common parent executes action on TBParent.
+    {
+        TransitionBoundaryMachine machine;
+        machine.Initiate();
+
+        TransitionBoundaryBehaviorLog::Clear();
+        machine.ProcessEvent(TBEventToBWithAction{});
+
+        ExpectSeq(TransitionBoundaryBehaviorLog::Destruction(), {"TBLeafA"});
+        ExpectSeq(TransitionBoundaryBehaviorLog::Construction(), {"TBLeafB"});
+        EXPECT_EQ(machine.action_counter, 1);
+        EXPECT_EQ(machine.counter, 0);
+    }
+
+    // Scenario 1b: sibling transition supports no-arg action().
+    {
+        TransitionBoundaryMachine machine;
+        machine.Initiate();
+
+        TransitionBoundaryBehaviorLog::Clear();
+        machine.ProcessEvent(TBEventToBWithNoArgAction{});
+
+        ExpectSeq(TransitionBoundaryBehaviorLog::Destruction(), {"TBLeafA"});
+        ExpectSeq(TransitionBoundaryBehaviorLog::Construction(), {"TBLeafB"});
+        EXPECT_EQ(machine.action_counter, 1);
+        EXPECT_EQ(machine.counter, 0);
+    }
+
+    // Scenario 2: cross top-level transition executes action on the state machine (common context).
+    {
+        TransitionTopLevelMachine machine;
+        machine.Initiate();
+
+        TransitionBoundaryBehaviorLog::Clear();
+        machine.ProcessEvent(TBEventToTop2WithAction{});
+
+        ExpectSeq(TransitionBoundaryBehaviorLog::Destruction(), {"TBTop1Leaf", "TBTop1"});
+        ExpectSeq(TransitionBoundaryBehaviorLog::Construction(), {"TBTop2"});
+        EXPECT_EQ(machine.action_counter, 1);
+        EXPECT_EQ(machine.counter, 0);
     }
 }

@@ -4,6 +4,9 @@
 
 #pragma once
 
+#include <string>
+
+#include "../log.h"
 #include "machine.h"
 
 FSM_STATE(StateA, Machine, StateAA) {
@@ -18,13 +21,17 @@ FSM_STATE(StateAAA, StateAA, StateAAAA) { MARK_CLASS(StateAAA); };
 FSM_STATE(StateAAAA, StateAAA) {
   using reactions =
       ufsm::mp::List<ufsm::Reaction<EventA>, ufsm::Reaction<EventB>>;
-  ufsm::Result React(const EventA& event) {
-    Context<StateA>().state_a_context_string = "test";
+  ufsm::Result React(const EventA&) {
+    Context<StateA>().state_a_context_string = "set-before-transit";
     MARK_FUNCTION;
-    return Transit<StateABAA>();
+    // Transition action runs on the least common ancestor context (here it's StateA).
+    return Transit<StateABAA>([](StateA& common_parent) {
+      std::cout << "[action] AAAA -> ABAA, common=StateA" << std::endl;
+      common_parent.state_a_context_string = "set-by-action";
+    });
   }
 
-  ufsm::Result React(const EventB& event) {
+  ufsm::Result React(const EventB&) {
     MARK_FUNCTION;
     return ufsm::Result::do_discard_event;
   }
@@ -38,11 +45,16 @@ FSM_STATE(StateAB, StateA, StateABA) { MARK_CLASS(StateAB); };
 
 FSM_STATE(StateABA, StateAB, StateABAA) {
   using reactions = ufsm::mp::List<ufsm::Reaction<EventB>>;
-  ufsm::Result React(const EventB& event) {
-    std::cout << "context: " << Context<StateA>().state_a_context_string
+  ufsm::Result React(const EventB&) {
+    std::cout << "context(before): " << Context<StateA>().state_a_context_string
               << std::endl;
     MARK_FUNCTION;
-    return Transit<StateAAAA>();
+    // No-arg action is also supported.
+    StateA* p_state_a = &Context<StateA>();
+    return Transit<StateAAAA>([p_state_a]() {
+      std::cout << "[action] ABA -> AAAA" << std::endl;
+      p_state_a->state_a_context_string = "set-by-noarg-action";
+    });
   }
 
   MARK_CLASS(StateABA);

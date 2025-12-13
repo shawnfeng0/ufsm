@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <memory>
 #include <type_traits>
 
@@ -205,9 +206,13 @@ public:
         }
     }
 
-    template <class DestState>
-    Result Transit() {
-        return TransitImpl<DestState>([](auto&) {});
+    // Transition with action executed on the least common ancestor (common parent) context.
+    // Supports two action shapes:
+    //  - action(CommonCtx&)
+    //  - action()
+    template <class DestState, class Action = std::nullptr_t>
+    Result Transit(const Action& action = nullptr) {
+        return TransitImpl<DestState>(action);
     }
 
     static void DeepConstruct(const ContextPtrType& p_context, OutermostContextBaseType& out_context) {
@@ -314,12 +319,13 @@ protected:
         // Get the state to terminate and common parent state
         TermState& term_state(Context<TermState>());
         const auto p_common = term_state.template ContextPtr<CommonCtx>();
-        auto& out_base = p_common->OutermostContextBase();
+        CommonCtx& common_ctx = term_state.template Context<CommonCtx>();
+        auto& out_base = common_ctx.OutermostContextBase();
 
         // 1. Terminate all substates from term_state to current state
         out_base.TerminateAsPartOfTransit(term_state);
         // 2. Execute transition action on common parent state
-        action(*p_common);
+        InvokeTransitionAction(action, common_ctx);
         // 3. Construct the path from common parent to destination state
         detail::Constructor<typename detail::MakeContextList<CommonCtx, DestState>::type, OutermostContextBaseType>::Construct(p_common, out_base);
 
@@ -334,6 +340,22 @@ protected:
     }
 
 private:
+    // Invoke transition action with preference for action(CommonCtx&) over action().
+    template <class Action, class CommonCtx>
+    static void InvokeTransitionAction(const Action& action, CommonCtx& common_ctx) {
+        if constexpr (std::is_same_v<Action, std::nullptr_t>) {
+            (void)action;
+            (void)common_ctx;
+        } else if constexpr (std::is_invocable_v<const Action&, CommonCtx&>) {
+            action(common_ctx);
+        } else if constexpr (std::is_invocable_v<const Action&>) {
+            action();
+        } else {
+            static_assert(std::is_invocable_v<const Action&, CommonCtx&> || std::is_invocable_v<const Action&>,
+                          "Transition action must be invocable either as action(CommonCtx&) or action().");
+        }
+    }
+
     ContextPtrType p_context_;
 };
 
