@@ -67,3 +67,7 @@ Practical implications:
 - Do not cache `ContextPtr<T>()` across transitions or after `Terminate()`.
 
 This design avoids reference-counting overhead and makes state lifetime explicit and deterministic.
+
+## Limitations
+
+- Events are identified by a per-binary internal type tag (RTTI-free). Cross-DSO/plugin event dispatch is not supported.

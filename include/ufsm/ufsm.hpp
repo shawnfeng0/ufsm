@@ -108,8 +108,8 @@ protected:
     constexpr explicit EventBase(const void* type_id) noexcept : type_id_(type_id) {}
 
 public:
-    // Type identity for RTTI-free event dispatch.
-    // The returned pointer is unique per concrete event type.
+    // Type identity for event dispatch.
+    // NOTE: This is unique per process image, but not stable across DSOs/plugins.
     const void* TypeId() const noexcept { return type_id_; }
 
 private:
