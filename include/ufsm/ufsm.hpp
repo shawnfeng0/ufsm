@@ -399,11 +399,13 @@ public:
                       "Derived must inherit from ufsm::StateMachine<Derived, InnerInitial> (CRTP).");
         static_assert(std::is_base_of_v<detail::StateBase, InnerInitial>,
                       "InnerInitial must be a ufsm state type (derive from ufsm::State<...>)." );
+        UFSM_ASSERT(!in_transition_);
         TerminateImpl();
         InnerInitial::DeepConstruct(static_cast<Derived*>(this), *static_cast<Derived*>(this));
     }
 
     void Terminate() {
+        UFSM_ASSERT(!in_transition_);
         TerminateImpl();
     }
 
@@ -415,6 +417,10 @@ public:
     Result ProcessEvent(const Ev& event) {
         static_assert(std::is_base_of_v<detail::EventBase, Ev>,
                       "Event type must derive from ufsm::Event<Ev> (i.e., from ufsm::detail::EventBase).");
+        // Debug-only: Disallow re-entrant event processing while a transition
+        // is in progress (e.g., from within a Transit action).
+        UFSM_ASSERT(!in_transition_);
+        DebugAssertConsistency();
         return SendEvent(event);
     }
 
@@ -441,7 +447,17 @@ public:
     }
 
     void TerminateAsPartOfTransit(detail::StateBase& state) {
+#if !defined(NDEBUG)
+        UFSM_ASSERT(!in_transition_);
+#endif
         TerminateImpl(state);
+
+    #if !defined(NDEBUG)
+        // A transition is considered "in progress" after the boundary has been
+        // terminated (leaf cleared) and remains so until a new leaf is constructed.
+        UFSM_ASSERT(current_state_ == nullptr);
+        in_transition_ = true;
+    #endif
     }
 
     Result ReactImpl(const detail::EventBase&) {
@@ -461,7 +477,15 @@ public:
 
         if constexpr (is_leaf) {
             current_state_ = raw;
+
+#if !defined(NDEBUG)
+            if (in_transition_) {
+                in_transition_ = false;
+            }
+#endif
         }
+
+        DebugAssertConsistency();
 
         return raw;
     }
@@ -470,10 +494,35 @@ protected:
     StateMachine() = default;
 
     virtual ~StateMachine() {
+        UFSM_ASSERT(!in_transition_);
         TerminateImpl();
     }
 
 private:
+#if !defined(NDEBUG)
+    void DebugAssertConsistency() const {
+        if (in_transition_) {
+            UFSM_ASSERT(current_state_ == nullptr);
+        }
+        if (active_path_.empty()) {
+            UFSM_ASSERT(current_state_ == nullptr);
+            return;
+        }
+
+        for (std::size_t i = 0; i < active_path_.size(); ++i) {
+            UFSM_ASSERT(active_path_[i] != nullptr);
+            UFSM_ASSERT(active_path_[i]->ActiveIndex() == i);
+        }
+
+        if (current_state_) {
+            UFSM_ASSERT(active_path_.back().get() == current_state_);
+            UFSM_ASSERT(current_state_->ActiveIndex() == active_path_.size() - 1);
+        }
+    }
+#else
+    void DebugAssertConsistency() const {}
+#endif
+
     // Keeps the outermost-to-innermost prefix of size keep_count and destroys the rest.
     // This provides deterministic destruction order (innermost first).
     void ResetToDepth(std::size_t keep_count) {
@@ -482,6 +531,8 @@ private:
         while (active_path_.size() > keep_count) {
             active_path_.pop_back();
         }
+
+        DebugAssertConsistency();
     }
 
     Result SendEvent(const detail::EventBase& event) {
@@ -497,8 +548,10 @@ private:
     // Destroys states from the current leaf up to and including the given boundary state.
     // The parent of the boundary remains alive and becomes the construction anchor.
     void TerminateImpl(detail::StateBase& state) {
+        DebugAssertConsistency();
         if (active_path_.empty()) {
             current_state_ = nullptr;
+            DebugAssertConsistency();
             return;
         }
 
@@ -523,6 +576,12 @@ private:
     // Outermost-to-innermost active states.
     // Ownership is centralized here; states reference their parent via raw pointer.
     std::vector<std::unique_ptr<detail::StateBase>> active_path_;
+
+#if !defined(NDEBUG)
+    bool in_transition_ = false;
+#else
+    static constexpr bool in_transition_ = false;
+#endif
 };
 
 } // namespace ufsm
