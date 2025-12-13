@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <memory>
 #include <type_traits>
+#include <utility>
 
 namespace ufsm {
 
@@ -74,19 +75,24 @@ struct BuildPath<List<Head, Tail...>, StopType> {
 
 } // namespace mp
 
-namespace detail {
-
-// Event handling result types
-enum ReactionResult {
-    no_reaction,        // Event not handled
-    do_forward_event,   // Forward event to parent state
-    do_discard_event,   // Discard event (actively ignored)
-    consumed            // Event consumed (handled)
+// Event handling result types.
+enum class Result {
+    kNoReaction,   // Event not handled
+    kForwardEvent, // Forward event to parent state
+    kDiscardEvent, // Discard event (actively ignored)
+    kConsumed      // Event consumed (handled)
 };
+
+namespace detail {
 
 class EventBase {
 protected:
     virtual ~EventBase() = default;
+
+public:
+    // Type identity for RTTI-free event dispatch.
+    // The returned pointer is unique per concrete event type.
+    virtual const void* TypeId() const noexcept = 0;
 };
 
 // Base class for all states, providing common interface
@@ -95,7 +101,7 @@ class StateBase : public std::enable_shared_from_this<StateBase> {
 public:
     using Ptr = std::shared_ptr<StateBase>;
 
-    virtual ReactionResult ReactImpl(const EventBase& event) = 0;
+    virtual Result ReactImpl(const EventBase& event) = 0;
     virtual void ExitImpl(Ptr& p_self, Ptr& p_outermost_unstable_state, bool perform_full_exit) = 0;
 
 protected:
@@ -105,29 +111,46 @@ protected:
 
 } // namespace detail
 
-using Result = detail::ReactionResult;
+// Public API surface:
+// - `ufsm::Result` follows Google C++ style (type names are CamelCase).
+// - helpers `forward_event()`, `discard_event()`, `consume_event()`.
+// Prefer these helpers in user code (similar to boost::statechart).
+[[nodiscard]] constexpr Result forward_event() noexcept { return Result::kForwardEvent; }
+[[nodiscard]] constexpr Result discard_event() noexcept { return Result::kDiscardEvent; }
+[[nodiscard]] constexpr Result consume_event() noexcept { return Result::kConsumed; }
 
 template <typename Derived>
-class Event : public detail::EventBase {};
+class Event : public detail::EventBase {
+public:
+    static const void* StaticTypeId() noexcept {
+        static const int tag = 0;
+        return &tag;
+    }
+
+    const void* TypeId() const noexcept override {
+        return StaticTypeId();
+    }
+};
 
 // Event reaction wrapper for dispatching specific event types to state's React method
 template <class EventType>
 class Reaction {
 public:
     template <typename StateType, typename EventBaseType>
-    static detail::ReactionResult React(StateType& state, const EventBaseType& event) {
-        // Attempt to cast event to specific type
-        if (const auto* casted_event = dynamic_cast<const EventType*>(&event)) {
+    static Result React(StateType& state, const EventBaseType& event) {
+        // RTTI-free match: compare type identity, then static_cast.
+        if (event.TypeId() == EventType::StaticTypeId()) {
+            const auto& casted_event = static_cast<const EventType&>(event);
             // If state's React returns void, assume event is consumed by default
-            if constexpr (std::is_void_v<decltype(state.React(*casted_event))>) {
-                state.React(*casted_event);
-                return detail::consumed;
+            if constexpr (std::is_void_v<decltype(state.React(casted_event))>) {
+                state.React(casted_event);
+                return Result::kConsumed;
             } else {
                 // Otherwise return the result from state's React method
-                return state.React(*casted_event);
+                return state.React(casted_event);
             }
         }
-        return detail::no_reaction;
+        return Result::kNoReaction;
     }
 };
 
@@ -211,8 +234,8 @@ public:
     //  - action(CommonCtx&)
     //  - action()
     template <class DestState, class Action = std::nullptr_t>
-    Result Transit(const Action& action = nullptr) {
-        return TransitImpl<DestState>(action);
+    Result Transit(Action&& action = nullptr) {
+        return TransitImpl<DestState>(std::forward<Action>(action));
     }
 
     static void DeepConstruct(const ContextPtrType& p_context, OutermostContextBaseType& out_context) {
@@ -275,9 +298,9 @@ public:
         p_ctx->ExitImpl(p_ctx, p_outer_unstable, perform_full_exit);
     }
 
-    detail::ReactionResult ReactImpl(const detail::EventBase& event) override {
+    Result ReactImpl(const detail::EventBase& event) override {
         auto res = LocalReact(event, typename Derived::reactions{});
-        if (res == detail::do_forward_event) {
+        if (res == Result::kForwardEvent) {
             return p_context_->ReactImpl(event);
         }
         return res;
@@ -329,14 +352,16 @@ protected:
         // 3. Construct the path from common parent to destination state
         detail::Constructor<typename detail::MakeContextList<CommonCtx, DestState>::type, OutermostContextBaseType>::Construct(p_common, out_base);
 
-        return detail::consumed;
+        return Result::kConsumed;
     }
 
     template <typename... Reactions>
-    detail::ReactionResult LocalReact(const detail::EventBase& event, mp::List<Reactions...>) {
-        detail::ReactionResult res = detail::no_reaction;
-        (void)((res = Reactions::React(*static_cast<Derived*>(this), event), res != detail::no_reaction) || ...);
-        return res == detail::no_reaction ? detail::do_forward_event : res;
+    Result LocalReact(const detail::EventBase& event, mp::List<Reactions...>) {
+        Result res = Result::kNoReaction;
+        (void)((res = Reactions::React(*static_cast<Derived*>(this), event),
+                res != Result::kNoReaction) ||
+               ...);
+        return res == Result::kNoReaction ? Result::kForwardEvent : res;
     }
 
 private:
@@ -424,8 +449,8 @@ public:
         is_innermost_common_outer_ = true;
     }
 
-    detail::ReactionResult ReactImpl(const detail::EventBase&) {
-        return detail::do_forward_event;
+    Result ReactImpl(const detail::EventBase&) {
+        return Result::kForwardEvent;
     }
 
     // Add state to state machine
@@ -465,8 +490,8 @@ protected:
     }
 
 private:
-    detail::ReactionResult SendEvent(const detail::EventBase& event) {
-        if (!current_state_) return detail::do_forward_event;
+    Result SendEvent(const detail::EventBase& event) {
+        if (!current_state_) return Result::kForwardEvent;
         return current_state_->ReactImpl(event);
     }
 

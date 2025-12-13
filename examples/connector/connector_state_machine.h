@@ -48,7 +48,7 @@ FSM_STATE(Working, Connected) {
   using reactions = ufsm::mp::List<ufsm::Reaction<EvTick>>;
   ufsm::Result React(const EvTick &) {
     MARK_FUNCTION;
-    return ufsm::detail::do_discard_event;
+    return ufsm::discard_event();
   }
   MARK_CLASS(Working);
 };

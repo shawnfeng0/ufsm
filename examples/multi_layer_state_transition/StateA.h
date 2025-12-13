@@ -33,7 +33,7 @@ FSM_STATE(StateAAAA, StateAAA) {
 
   ufsm::Result React(const EventB&) {
     MARK_FUNCTION;
-    return ufsm::Result::do_discard_event;
+    return ufsm::discard_event();
   }
 
  public:

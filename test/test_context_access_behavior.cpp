@@ -63,7 +63,7 @@ FSM_STATE(CtxLeafB, CtxParent) {
     ufsm::Result React(const CtxEventPingB&) {
         OutermostContext().ping_b_calls++;
         OutermostContext().parent_ptr_non_null_in_ping_b = (ContextPtr<CtxParent>().get() != nullptr);
-        return ufsm::detail::consumed;
+        return ufsm::consume_event();
     }
 
     ufsm::Result React(const CtxEventToTop2&) {
