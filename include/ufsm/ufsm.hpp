@@ -1,9 +1,19 @@
 #pragma once
 
 #include <cstddef>
+#include <cassert>
 #include <memory>
 #include <type_traits>
 #include <utility>
+#include <vector>
+
+#ifndef UFSM_ASSERT
+#if !defined(NDEBUG)
+#define UFSM_ASSERT(expr) assert(expr)
+#else
+#define UFSM_ASSERT(expr) ((void)0)
+#endif
+#endif
 
 namespace ufsm {
 
@@ -106,18 +116,22 @@ private:
     const void* type_id_;
 };
 
-// Base class for all states, providing common interface
-// Inherits enable_shared_from_this to support creating shared_ptr from this pointer
-class StateBase : public std::enable_shared_from_this<StateBase> {
+// Base class for all states, providing common interface.
+// Ownership is handled by the outermost state machine (see StateMachine).
+class StateBase {
 public:
-    using Ptr = std::shared_ptr<StateBase>;
-
     virtual Result ReactImpl(const EventBase& event) = 0;
-    virtual void ExitImpl(Ptr& p_self, Ptr& p_outermost_unstable_state, bool perform_full_exit) = 0;
+
+    virtual ~StateBase() = default;
+
+    std::size_t ActiveIndex() const noexcept { return active_index_; }
+    void SetActiveIndex(std::size_t index) noexcept { active_index_ = index; }
 
 protected:
     StateBase() = default;
-    virtual ~StateBase() = default;
+
+private:
+    std::size_t active_index_ = 0;
 };
 
 } // namespace detail
@@ -203,10 +217,10 @@ public:
     using InnerInitialType = InnerInitial;
     using reactions = mp::List<>;                                           // Event reaction list (overridden by derived class)
     using ContextType = typename ContextState::InnerContextType;            // Parent state type
-    using ContextPtrType = typename ContextType::InnerContextPtrType;       // Parent state pointer type
+    using ContextPtrType = typename ContextType::InnerContextPtrType;       // Parent context pointer type (raw, non-owning)
     using OutermostContextType = typename ContextType::OutermostContextType;// Outermost state machine type
     using InnerContextType = Derived;                                       // This state as inner context type
-    using InnerContextPtrType = std::shared_ptr<Derived>;                  // This state's pointer type
+    using InnerContextPtrType = Derived*;                                   // This state's pointer type
     using OutermostContextBaseType = typename ContextType::OutermostContextBaseType; // Outermost state machine base class
     using ContextTypeList = typename mp::PushFront<typename ContextType::ContextTypeList, ContextType>::type; // Context type list
 
@@ -250,63 +264,32 @@ public:
     }
 
     static void DeepConstruct(const ContextPtrType& p_context, OutermostContextBaseType& out_context) {
-        auto p_inner = ShallowConstruct(p_context, out_context);
+        auto* p_inner = ShallowConstruct(p_context, out_context);
         if constexpr (!std::is_same_v<void, InnerInitial>) {
             InnerInitial::DeepConstruct(p_inner, out_context);
         }
     }
 
     static InnerContextPtrType ShallowConstruct(const ContextPtrType& p_context, OutermostContextBaseType& out_context) {
-        InnerContextPtrType p_inner;
+        static_assert(std::is_pointer_v<ContextPtrType>,
+                      "ufsm (scheme 2): ContextPtrType is expected to be a raw pointer type.");
+        std::unique_ptr<Derived> p_inner;
         if constexpr (std::is_constructible_v<Derived, ContextType&>) {
-            if constexpr (std::is_pointer_v<ContextPtrType>) {
-                p_inner = std::make_shared<Derived>(*static_cast<ContextType*>(p_context));
-            } else {
-                p_inner = std::make_shared<Derived>(*p_context);
-            }
+            p_inner = std::make_unique<Derived>(*p_context);
         } else {
-            p_inner = std::make_shared<Derived>();
+            p_inner = std::make_unique<Derived>();
             p_inner->SetContext(p_context);
         }
-        out_context.Add(p_inner, p_context);
-        return p_inner;
+        return out_context.Add(std::move(p_inner), p_context);
     }
 
     template <class TargetContext>
-    const typename TargetContext::InnerContextPtrType& ContextPtr() const {
+    [[nodiscard]] typename TargetContext::InnerContextPtrType ContextPtr() const {
         if constexpr (std::is_same_v<TargetContext, ContextType>) {
             return p_context_;
         } else {
             return p_context_->template ContextPtr<TargetContext>();
         }
-    }
-
-    void SetOutermostUnstableState(Ptr& p_outer_unstable) {
-        p_outer_unstable = shared_from_this();
-    }
-
-    // State exit implementation
-    // Uses reference counting to determine state activity and avoid duplicate exits
-    void ExitImpl(InnerContextPtrType& p_self, Ptr& p_outer_unstable, bool perform_full_exit) {
-        long use_count = weak_from_this().use_count();
-
-        // Skip if state is being handled by another exit flow
-        if (use_count > 2) return;
-
-        // If this is the outermost unstable state, notify parent
-        if (use_count == 2 && p_outer_unstable.get() == this) {
-            p_context_->SetOutermostUnstableState(p_outer_unstable);
-            return;
-        }
-
-        // Normal exit: use_count <= 2 and not outermost
-        // For full termination, do not auto-establish an "unstable" boundary.
-        if (!perform_full_exit && !p_outer_unstable) {
-            p_context_->SetOutermostUnstableState(p_outer_unstable);
-        }
-        ContextPtrType p_ctx = p_context_;
-        p_self = nullptr;
-        p_ctx->ExitImpl(p_ctx, p_outer_unstable, perform_full_exit);
     }
 
     Result ReactImpl(const detail::EventBase& event) override {
@@ -322,23 +305,15 @@ protected:
     State() : p_context_(nullptr) {}
 
     State(ContextType& context) : p_context_(nullptr) {
-        if constexpr (std::is_pointer_v<ContextPtrType>) {
-            p_context_ = &context;
-        } else {
-            p_context_ = std::static_pointer_cast<ContextType>(context.shared_from_this());
-        }
+        p_context_ = &context;
     }
 
     ~State() = default;
 
-    void SetContext(const ContextPtrType& p_context) {
+    void SetContext(ContextPtrType p_context) {
+        static_assert(std::is_pointer_v<ContextPtrType>,
+                      "ufsm (scheme 2): ContextPtrType is expected to be a raw pointer type.");
         p_context_ = p_context;
-    }
-
-    void ExitImpl(Ptr& p_self, Ptr& p_outer_unstable, bool perform_full_exit) override {
-        InnerContextPtrType p_derived = std::static_pointer_cast<Derived>(shared_from_this());
-        p_self = nullptr;
-        ExitImpl(p_derived, p_outer_unstable, perform_full_exit);
     }
 
     // State transition implementation
@@ -401,6 +376,8 @@ private:
         }
     }
 
+    // Non-owning pointer to the parent context.
+    // Valid only while this state is active; do not cache across transitions.
     ContextPtrType p_context_;
 };
 
@@ -413,7 +390,7 @@ public:
     using InnerContextType = Derived;               // This state machine as inner context type
     using OutermostContextType = Derived;           // Outermost context (the state machine itself)
     using OutermostContextBaseType = StateMachine;  // Outermost base class
-    using InnerContextPtrType = StateMachine*;      // State machine uses raw pointer (no shared ownership needed)
+    using InnerContextPtrType = StateMachine*;      // Root context pointer type (raw, non-owning)
     using ContextTypeList = mp::List<>;             // Empty context list (state machine is root)
     using ContextType = void;                       // No parent context
 
@@ -422,12 +399,12 @@ public:
                       "Derived must inherit from ufsm::StateMachine<Derived, InnerInitial> (CRTP).");
         static_assert(std::is_base_of_v<detail::StateBase, InnerInitial>,
                       "InnerInitial must be a ufsm state type (derive from ufsm::State<...>)." );
-        TerminateImpl(true);
+        TerminateImpl();
         InnerInitial::DeepConstruct(static_cast<Derived*>(this), *static_cast<Derived*>(this));
     }
 
     void Terminate() {
-        TerminateImpl(true);
+        TerminateImpl();
     }
 
     bool Terminated() const noexcept {
@@ -439,14 +416,6 @@ public:
         static_assert(std::is_base_of_v<detail::EventBase, Ev>,
                       "Event type must derive from ufsm::Event<Ev> (i.e., from ufsm::detail::EventBase).");
         SendEvent(event);
-    }
-
-    void ExitImpl(InnerContextPtrType&, detail::StateBase::Ptr& p_outer_unstable, bool) {
-        p_outer_unstable = nullptr;
-    }
-
-    void SetOutermostUnstableState(detail::StateBase::Ptr& p_state) {
-        p_state = nullptr;
     }
 
     template <class TargetContext>
@@ -473,86 +442,87 @@ public:
 
     void TerminateAsPartOfTransit(detail::StateBase& state) {
         TerminateImpl(state);
-        is_innermost_common_outer_ = true;
     }
 
     Result ReactImpl(const detail::EventBase&) {
         return Result::kForwardEvent;
     }
 
-    // Add state to state machine
-    // Called during state construction to track current active state and unstable states
+    // Add state to the state machine.
+    // Called during state construction to track and own the currently active state chain.
     template <class StateType, class ParentType>
-    void Add(const std::shared_ptr<StateType>& p_state, const ParentType& parent) {
+    StateType* Add(std::unique_ptr<StateType> p_state, const ParentType& parent) {
+        (void)parent;
         constexpr bool is_leaf = std::is_same_v<typename StateType::InnerInitialType, void>;
 
-        detail::StateBase::Ptr p_candidate = is_leaf ? nullptr : p_state;
+        p_state->SetActiveIndex(active_path_.size());
+        StateType* const raw = p_state.get();
+        active_path_.push_back(std::move(p_state));
 
         if constexpr (is_leaf) {
-            current_state_ = p_state;
+            current_state_ = raw;
         }
 
-        // Update outermost unstable state if needed
-        bool is_parent_unstable;
-        if constexpr (std::is_pointer_v<ParentType>) {
-            is_parent_unstable = (p_outermost_unstable_state_ == nullptr);
-        } else {
-            is_parent_unstable = (p_outermost_unstable_state_ == parent);
-        }
-
-        if (is_innermost_common_outer_ || is_parent_unstable) {
-            is_innermost_common_outer_ = false;
-            p_outermost_unstable_state_ = p_candidate;
-        }
+        return raw;
     }
 
 protected:
-    StateMachine()
-        : is_innermost_common_outer_(false),
-          p_outermost_unstable_state_(nullptr) {}
+    StateMachine() = default;
 
     virtual ~StateMachine() {
-        TerminateImpl(true);
-        current_state_.reset();  // Explicitly release state before derived class destructs
+        TerminateImpl();
     }
 
 private:
+    // Keeps the outermost-to-innermost prefix of size keep_count and destroys the rest.
+    // This provides deterministic destruction order (innermost first).
+    void ResetToDepth(std::size_t keep_count) {
+        if (keep_count > active_path_.size()) keep_count = active_path_.size();
+        current_state_ = nullptr;
+        while (active_path_.size() > keep_count) {
+            active_path_.pop_back();
+        }
+    }
+
     Result SendEvent(const detail::EventBase& event) {
         if (!current_state_) return Result::kForwardEvent;
         return current_state_->ReactImpl(event);
     }
 
-    void TerminateImpl(bool perform_full_exit) {
-        if (current_state_) {
-            auto p = current_state_;
-            current_state_ = nullptr;
-            p->ExitImpl(p, p_outermost_unstable_state_, perform_full_exit);
-        }
+    void TerminateImpl() {
+        ResetToDepth(0);
     }
 
-    // State machine termination implementation (with state parameter)
-    // Terminates all states from current state up to (but not including) the parent of 'state'
+    // Termination used by transition boundary semantics.
+    // Destroys states from the current leaf up to and including the given boundary state.
+    // The parent of the boundary remains alive and becomes the construction anchor.
     void TerminateImpl(detail::StateBase& state) {
-        is_innermost_common_outer_ = false;
-
-        if (current_state_) {
-            // Set state as the termination boundary
-            p_outermost_unstable_state_ = state.shared_from_this();
-
-            // Exit from current state
-            auto p = current_state_;
+        if (active_path_.empty()) {
             current_state_ = nullptr;
-            // For transitions, we still want to fully unwind until the boundary state.
-            p->ExitImpl(p, p_outermost_unstable_state_, true);
-
-            // Clear the boundary marker
-            p_outermost_unstable_state_ = nullptr;
+            return;
         }
+
+        // Fast path: states record their active_path index.
+        const std::size_t boundary_state_index = state.ActiveIndex();
+        UFSM_ASSERT(boundary_state_index < active_path_.size());
+        UFSM_ASSERT(active_path_[boundary_state_index].get() == &state);
+
+        // Release fallback: avoid linear scans; a mismatch indicates a logic bug.
+        if (boundary_state_index >= active_path_.size() || active_path_[boundary_state_index].get() != &state) {
+            ResetToDepth(0);
+            return;
+        }
+
+        // If not found, fall back to full termination.
+        // Keep only the states strictly above the boundary state.
+        const std::size_t keep_count = boundary_state_index;
+        ResetToDepth(keep_count);
     }
 
-    detail::StateBase::Ptr current_state_;              // Current active innermost state
-    bool is_innermost_common_outer_;                    // Flag for innermost common outer state
-    detail::StateBase::Ptr p_outermost_unstable_state_; // Outermost unstable state (during transition)
+    detail::StateBase* current_state_ = nullptr; // Current active innermost (leaf) state
+    // Outermost-to-innermost active states.
+    // Ownership is centralized here; states reference their parent via raw pointer.
+    std::vector<std::unique_ptr<detail::StateBase>> active_path_;
 };
 
 } // namespace ufsm

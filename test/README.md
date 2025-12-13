@@ -40,10 +40,10 @@ All test cases are built into a single binary: `build_test/test/ufsm_test`.
 
 - `test/test_multi_layer_lifecycle.cpp`: multi-layer construction/destruction order (example-driven), plus deep termination coverage
 - `test/test_transition_boundary_behavior.cpp`: sibling vs top-level transition boundary semantics (minimal repro cases)
-- `test/test_event_routing_behavior.cpp`: `do_forward_event` / `do_discard_event` / unhandled routing behavior
+- `test/test_event_routing_behavior.cpp`: `forward_event()` / `discard_event()` / unhandled routing behavior
 - `test/test_idempotency_behavior.cpp`: repeated `Initiate()` / `Terminate()` and post-terminate event behavior
 - `test/test_destructor_behavior.cpp`: `~StateMachine()` must fully unwind active hierarchy
-- `test/test_context_access_behavior.cpp`: `Context<T>()`/`ContextPtr<T>()`/`OutermostContext()` correctness across transitions
+- `test/test_context_access_behavior.cpp`: `Context<T>()`/`ContextPtr<T>()` (raw pointer)/`OutermostContext()` correctness across transitions
 
 ## State Hierarchy Used in Tests
 
