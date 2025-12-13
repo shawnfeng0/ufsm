@@ -79,7 +79,8 @@ TEST(EventRoutingBehaviorTest, ForwardAndDiscardRoutingBehaviors) {
         machine.Initiate();
 
         EventRoutingBehaviorLog::Clear();
-        machine.ProcessEvent(EREventForwardToParent{});
+        const auto res = machine.ProcessEvent(EREventForwardToParent{});
+        EXPECT_EQ(res, ufsm::Result::kConsumed);
 
         ExpectEmptyLifecycleDelta();
         EXPECT_EQ(machine.child_forward_called, 1);
@@ -93,7 +94,8 @@ TEST(EventRoutingBehaviorTest, ForwardAndDiscardRoutingBehaviors) {
         machine.Initiate();
 
         EventRoutingBehaviorLog::Clear();
-        machine.ProcessEvent(EREventDiscardAtChild{});
+        const auto res = machine.ProcessEvent(EREventDiscardAtChild{});
+        EXPECT_EQ(res, ufsm::Result::kDiscardEvent);
 
         ExpectEmptyLifecycleDelta();
         EXPECT_EQ(machine.child_forward_called, 0);

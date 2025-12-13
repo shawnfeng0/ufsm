@@ -84,7 +84,8 @@ TEST(IdempotencyBehaviorTest, IdempotencyAndPostTerminateBehaviors) {
         IdempotencyBehaviorLog::Clear();
 
         // After termination, sending events must not crash and must not modify lifecycle.
-        machine.ProcessEvent(IEventHandled{});
+        const auto res = machine.ProcessEvent(IEventHandled{});
+        EXPECT_EQ(res, ufsm::Result::kForwardEvent);
 
         EXPECT_TRUE(IdempotencyBehaviorLog::Construction().empty());
         EXPECT_TRUE(IdempotencyBehaviorLog::Destruction().empty());

@@ -107,7 +107,8 @@ TEST(TransitionBoundaryBehaviorTest, BoundarySemanticsInAllScenarios) {
 
         // Ignore initial construction noise.
         TransitionBoundaryBehaviorLog::Clear();
-        machine.ProcessEvent(TBEventToB{});
+        const auto res = machine.ProcessEvent(TBEventToB{});
+        EXPECT_EQ(res, ufsm::Result::kConsumed);
 
         // Only the leaf should be replaced.
         ExpectSeq(TransitionBoundaryBehaviorLog::Destruction(), {"TBLeafA"});
@@ -121,7 +122,8 @@ TEST(TransitionBoundaryBehaviorTest, BoundarySemanticsInAllScenarios) {
         machine.Initiate();
 
         TransitionBoundaryBehaviorLog::Clear();
-        machine.ProcessEvent(TBEventToTop2{});
+        const auto res = machine.ProcessEvent(TBEventToTop2{});
+        EXPECT_EQ(res, ufsm::Result::kConsumed);
 
         ExpectSeq(TransitionBoundaryBehaviorLog::Destruction(), {"TBTop1Leaf", "TBTop1"});
         ExpectSeq(TransitionBoundaryBehaviorLog::Construction(), {"TBTop2"});
@@ -136,7 +138,8 @@ TEST(TransitionActionTest, ExecutesOnLeastCommonAncestorContext) {
         machine.Initiate();
 
         TransitionBoundaryBehaviorLog::Clear();
-        machine.ProcessEvent(TBEventToBWithAction{});
+        const auto res = machine.ProcessEvent(TBEventToBWithAction{});
+        EXPECT_EQ(res, ufsm::Result::kConsumed);
 
         ExpectSeq(TransitionBoundaryBehaviorLog::Destruction(), {"TBLeafA"});
         ExpectSeq(TransitionBoundaryBehaviorLog::Construction(), {"TBLeafB"});
@@ -150,7 +153,8 @@ TEST(TransitionActionTest, ExecutesOnLeastCommonAncestorContext) {
         machine.Initiate();
 
         TransitionBoundaryBehaviorLog::Clear();
-        machine.ProcessEvent(TBEventToBWithNoArgAction{});
+        const auto res = machine.ProcessEvent(TBEventToBWithNoArgAction{});
+        EXPECT_EQ(res, ufsm::Result::kConsumed);
 
         ExpectSeq(TransitionBoundaryBehaviorLog::Destruction(), {"TBLeafA"});
         ExpectSeq(TransitionBoundaryBehaviorLog::Construction(), {"TBLeafB"});
@@ -164,7 +168,8 @@ TEST(TransitionActionTest, ExecutesOnLeastCommonAncestorContext) {
         machine.Initiate();
 
         TransitionBoundaryBehaviorLog::Clear();
-        machine.ProcessEvent(TBEventToTop2WithAction{});
+        const auto res = machine.ProcessEvent(TBEventToTop2WithAction{});
+        EXPECT_EQ(res, ufsm::Result::kConsumed);
 
         ExpectSeq(TransitionBoundaryBehaviorLog::Destruction(), {"TBTop1Leaf", "TBTop1"});
         ExpectSeq(TransitionBoundaryBehaviorLog::Construction(), {"TBTop2"});

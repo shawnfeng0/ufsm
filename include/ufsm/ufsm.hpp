@@ -412,10 +412,10 @@ public:
     }
 
     template <class Ev>
-    void ProcessEvent(const Ev& event) {
+    Result ProcessEvent(const Ev& event) {
         static_assert(std::is_base_of_v<detail::EventBase, Ev>,
                       "Event type must derive from ufsm::Event<Ev> (i.e., from ufsm::detail::EventBase).");
-        SendEvent(event);
+        return SendEvent(event);
     }
 
     template <class TargetContext>
