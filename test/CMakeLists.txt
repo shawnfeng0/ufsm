@@ -10,9 +10,6 @@ FetchContent_Declare(
 set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(googletest)
 
-# Enable testing
-enable_testing()
-
 # Build a single test binary from all test sources in this directory.
 add_executable(ufsm_test
   test_multi_layer_lifecycle.cpp
@@ -29,6 +26,8 @@ target_link_libraries(ufsm_test
     gtest_main
     gmock_main
 )
+
+target_compile_options(ufsm_test PRIVATE -Wall -Wextra)
 
 target_include_directories(ufsm_test
   PRIVATE

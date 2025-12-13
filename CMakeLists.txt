@@ -10,8 +10,6 @@ option(UFSM_BUILD_TESTS "Build unit tests" OFF)
 # registered in subdirectories.
 enable_testing()
 
-add_compile_options(-Wextra -Wall)
-
 add_library(${PROJECT_NAME} INTERFACE)
 target_include_directories(${PROJECT_NAME} INTERFACE include)
 
