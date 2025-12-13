@@ -85,6 +85,12 @@ enum class Result {
 
 namespace detail {
 
+template <typename T>
+struct IsMpList : std::false_type {};
+
+template <typename... Ts>
+struct IsMpList<mp::List<Ts...>> : std::true_type {};
+
 class EventBase {
 protected:
     virtual ~EventBase() = default;
@@ -141,6 +147,8 @@ class Reaction {
 public:
     template <typename StateType, typename EventBaseType>
     static Result React(StateType& state, const EventBaseType& event) {
+        static_assert(std::is_base_of_v<detail::EventBase, EventType>,
+                      "EventType must derive from ufsm::Event<EventType> (i.e., from ufsm::detail::EventBase).");
         // RTTI-free match: compare type identity, then static_cast.
         if (event.TypeId() == EventType::StaticTypeId()) {
             const auto& casted_event = static_cast<const EventType&>(event);
@@ -237,7 +245,7 @@ public:
     //  - action(CommonCtx&)
     //  - action()
     template <class DestState, class Action = std::nullptr_t>
-    Result Transit(Action&& action = nullptr) {
+    [[nodiscard]] Result Transit(Action&& action = nullptr) {
         return TransitImpl<DestState>(std::forward<Action>(action));
     }
 
@@ -302,6 +310,7 @@ public:
     }
 
     Result ReactImpl(const detail::EventBase& event) override {
+        StaticChecks();
         auto res = LocalReact(event, typename Derived::reactions{});
         if (res == Result::kForwardEvent) {
             return p_context_->ReactImpl(event);
@@ -336,7 +345,7 @@ protected:
     // DestState: Target state type
     // Action: Transition action (executed on common parent state)
     template <class DestState, class Action>
-    Result TransitImpl(const Action& action) {
+    [[nodiscard]] Result TransitImpl(Action&& action) {
         // Find the least common ancestor of source and destination states
         using CommonCtx = typename mp::FindFirstCommon<ContextTypeList, typename DestState::ContextTypeList>::type;
         // Find the direct child state of common parent (state to be terminated)
@@ -351,7 +360,7 @@ protected:
         // 1. Terminate all substates from term_state to current state
         out_base.TerminateAsPartOfTransit(term_state);
         // 2. Execute transition action on common parent state
-        InvokeTransitionAction(action, common_ctx);
+        InvokeTransitionAction(std::forward<Action>(action), common_ctx);
         // 3. Construct the path from common parent to destination state
         detail::Constructor<typename detail::MakeContextList<CommonCtx, DestState>::type, OutermostContextBaseType>::Construct(p_common, out_base);
 
@@ -368,18 +377,26 @@ protected:
     }
 
 private:
+    static void StaticChecks() {
+        static_assert(std::is_base_of_v<State<Derived, ContextState, InnerInitial>, Derived>,
+                      "Derived must inherit from ufsm::State<Derived, ContextState, InnerInitial> (CRTP).");
+        static_assert(detail::IsMpList<typename Derived::reactions>::value,
+                      "Derived::reactions must be ufsm::mp::List<...>.");
+    }
+
     // Invoke transition action with preference for action(CommonCtx&) over action().
     template <class Action, class CommonCtx>
-    static void InvokeTransitionAction(const Action& action, CommonCtx& common_ctx) {
-        if constexpr (std::is_same_v<Action, std::nullptr_t>) {
+    static void InvokeTransitionAction(Action&& action, CommonCtx& common_ctx) {
+        using ActionT = std::remove_reference_t<Action>;
+        if constexpr (std::is_same_v<ActionT, std::nullptr_t>) {
             (void)action;
             (void)common_ctx;
-        } else if constexpr (std::is_invocable_v<const Action&, CommonCtx&>) {
-            action(common_ctx);
-        } else if constexpr (std::is_invocable_v<const Action&>) {
-            action();
+        } else if constexpr (std::is_invocable_v<Action&&, CommonCtx&>) {
+            std::forward<Action>(action)(common_ctx);
+        } else if constexpr (std::is_invocable_v<Action&&>) {
+            std::forward<Action>(action)();
         } else {
-            static_assert(std::is_invocable_v<const Action&, CommonCtx&> || std::is_invocable_v<const Action&>,
+            static_assert(std::is_invocable_v<Action&&, CommonCtx&> || std::is_invocable_v<Action&&>,
                           "Transition action must be invocable either as action(CommonCtx&) or action().");
         }
     }
@@ -401,6 +418,10 @@ public:
     using ContextType = void;                       // No parent context
 
     void Initiate() {
+        static_assert(std::is_base_of_v<StateMachine<Derived, InnerInitial>, Derived>,
+                      "Derived must inherit from ufsm::StateMachine<Derived, InnerInitial> (CRTP).");
+        static_assert(std::is_base_of_v<detail::StateBase, InnerInitial>,
+                      "InnerInitial must be a ufsm state type (derive from ufsm::State<...>)." );
         TerminateImpl(true);
         InnerInitial::DeepConstruct(static_cast<Derived*>(this), *static_cast<Derived*>(this));
     }
@@ -409,11 +430,14 @@ public:
         TerminateImpl(true);
     }
 
-    bool Terminated() const {
+    bool Terminated() const noexcept {
         return !current_state_;
     }
 
-    void ProcessEvent(const detail::EventBase& event) {
+    template <class Ev>
+    void ProcessEvent(const Ev& event) {
+        static_assert(std::is_base_of_v<detail::EventBase, Ev>,
+                      "Event type must derive from ufsm::Event<Ev> (i.e., from ufsm::detail::EventBase).");
         SendEvent(event);
     }
 
