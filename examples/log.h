@@ -13,7 +13,7 @@
 
 #define LOG std::cout << "(" << __FILENAME__ << ":" << __LINE__ << ") "
 
-#define MARK_FUNCTION LOG << __PRETTY_FUNCTION__ << std::endl
+#define MARK_FUNCTION LOG << __FUNCTION__ << std::endl
 
 #define MARK_CLASS(TYPE)    \
  public:                    \
