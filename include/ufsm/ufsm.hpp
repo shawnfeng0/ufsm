@@ -7,6 +7,7 @@
 #include <string_view>
 #include <type_traits>
 #include <utility>
+#include <deque>
 #include <vector>
 
 #ifndef UFSM_ASSERT
@@ -92,18 +93,23 @@ struct BuildPath<List<Head, Tail...>, StopType> {
 //   using reactions = ufsm::List<ufsm::Reaction<Ev1>, ufsm::Transition<Ev2, Next>>;
 template <typename... Types>
 using List = mp::List<Types...>;
-
+// Forward declaration for diagnostics traits (defined later).
 // Event handling result types.
 enum class Result {
     kNoReaction,   // Event not handled
     kForwardEvent, // Forward event to parent state
     kDiscardEvent, // Discard event (actively ignored)
+    kDeferEvent,   // Defer the currently handled event
     kConsumed      // Event consumed (handled)
 };
 
 // Forward declaration for diagnostics traits (defined later).
 template <class EventType>
 class Reaction;
+
+// Forward declarations for friend relationships between framework internals.
+template <typename Derived, typename InnerInitial>
+class StateMachine;
 
 namespace detail {
 
@@ -161,11 +167,15 @@ struct IsReaction<Reaction<EventType>> : std::true_type {};
 template <typename T>
 struct IsTransition : std::false_type {};
 
+template <typename T>
+struct IsDeferral : std::false_type {};
+
 template <typename ListType>
 struct AllAreReactionEntries;
 
 template <typename... Ts>
-struct AllAreReactionEntries<mp::List<Ts...>> : std::bool_constant<((IsReaction<Ts>::value || IsTransition<Ts>::value) && ...)> {};
+struct AllAreReactionEntries<mp::List<Ts...>>
+    : std::bool_constant<((IsReaction<Ts>::value || IsTransition<Ts>::value || IsDeferral<Ts>::value) && ...)> {};
 
 template <typename StateType, typename EventType, typename = void>
 struct HasReactMethod : std::false_type {};
@@ -189,12 +199,11 @@ struct ReactReturnType<StateType,
 };
 
 class EventBase {
-protected:
+public:
     virtual ~EventBase() = default;
 
-    constexpr explicit EventBase(const void* type_id) noexcept : type_id_(type_id) {}
+    using Ptr = std::unique_ptr<EventBase>;
 
-public:
     // Type identity for event dispatch.
     // NOTE: This is unique per process image, but not stable across DSOs/plugins.
     const void* TypeId() const noexcept { return type_id_; }
@@ -202,6 +211,13 @@ public:
     // Human-readable name for diagnostics/logging.
     // Default implementation is generic; ufsm::Event<Derived> overrides this.
     virtual const char* Name() const noexcept { return "<ufsm::event>"; }
+
+    // Polymorphic copy used by Boost.Statechart-like deferral of event_base.
+    // Implemented by ufsm::Event<Derived>.
+    virtual Ptr Clone() const = 0;
+
+protected:
+    constexpr explicit EventBase(const void* type_id) noexcept : type_id_(type_id) {}
 
 private:
     const void* type_id_;
@@ -213,23 +229,32 @@ class StateBase {
 public:
     virtual Result ReactImpl(const EventBase& event) = 0;
 
-    virtual ~StateBase() = default;
+    // RTTI-free identity and name for diagnostics and state queries.
+    virtual const void* TypeId() const noexcept = 0;
+    virtual const char* Name() const noexcept { return "<ufsm::state>"; }
 
-    std::size_t ActiveIndex() const noexcept { return active_index_; }
-    void SetActiveIndex(std::size_t index) noexcept { active_index_ = index; }
+    virtual ~StateBase() = default;
 
 protected:
     StateBase() = default;
 
 private:
+    template <typename, typename>
+    friend class ::ufsm::StateMachine;
+
+    std::size_t ActiveIndex() const noexcept { return active_index_; }
+    void SetActiveIndex(std::size_t index) noexcept { active_index_ = index; }
+
     std::size_t active_index_ = 0;
 };
+
 
 } // namespace detail
 
 // Public API surface:
 // - `ufsm::Result` follows Google C++ style (type names are CamelCase).
 // - helpers `forward_event()`, `discard_event()`, `consume_event()`.
+// Note: `Result::kDeferEvent` is used internally by `State::defer_event()`.
 // Prefer these helpers in user code (similar to boost::statechart).
 [[nodiscard]] constexpr Result forward_event() noexcept { return Result::kForwardEvent; }
 [[nodiscard]] constexpr Result discard_event() noexcept { return Result::kDiscardEvent; }
@@ -242,6 +267,12 @@ public:
 
     const char* Name() const noexcept override {
         return detail::PrettyTypeNameCStr<Derived>();
+    }
+
+    detail::EventBase::Ptr Clone() const override {
+        static_assert(std::is_copy_constructible_v<Derived>,
+                      "Events must be copy constructible to be deferred as ufsm::detail::EventBase.");
+        return detail::EventBase::Ptr(new Derived(static_cast<const Derived&>(*this)));
     }
 
     static const void* StaticTypeId() noexcept {
@@ -320,6 +351,31 @@ public:
 template <class EventType, class DestState, class Action = std::nullptr_t>
 using transition = Transition<EventType, DestState, Action>;
 
+// Boost.Statechart-like deferral reaction entry.
+// Usage in a state:
+//   using reactions = ufsm::List<ufsm::Deferral<MyEvent>>;
+template <class EventType>
+class Deferral {
+public:
+    template <typename StateType, typename EventBaseType>
+    static Result React(StateType& state, const EventBaseType& event) {
+        static_assert(std::is_base_of_v<detail::EventBase, EventType>,
+                      "EventType must derive from ufsm::Event<EventType> (i.e., from ufsm::detail::EventBase).\n");
+
+        if constexpr (std::is_same_v<EventType, detail::EventBase>) {
+            return state.defer_event();
+        } else {
+            if (event.TypeId() == EventType::StaticTypeId()) {
+                return state.defer_event();
+            }
+            return Result::kNoReaction;
+        }
+    }
+};
+
+template <class EventType>
+using deferral = Deferral<EventType>;
+
 namespace detail {
 
 template <typename MachineType, typename = void>
@@ -342,6 +398,9 @@ inline void InvokeOnUnhandledEventIfPresent(MachineType& machine, const EventBas
 
 template <typename EventType, typename DestState, typename Action>
 struct IsTransition<Transition<EventType, DestState, Action>> : std::true_type {};
+
+template <typename EventType>
+struct IsDeferral<Deferral<EventType>> : std::true_type {};
 
 } // namespace detail
 
@@ -398,8 +457,19 @@ public:
         return p_context_->OutermostContext();
     }
 
-    OutermostContextBaseType& OutermostContextBase() {
-        return p_context_->OutermostContextBase();
+    // Boost.Statechart-like helper: allow states to post deferred events without
+    // reaching through OutermostContext().
+    template <class Ev>
+    void PostEvent(Ev&& event) {
+        OutermostContext().PostEvent(std::forward<Ev>(event));
+    }
+
+    // Boost.Statechart-like naming convenience: defers the *currently handled* event.
+    // Intended to be called from inside a reaction handler.
+    [[nodiscard]] Result defer_event() {
+        UFSM_ASSERT(OutermostContextBase().CurrentEventPtr() != nullptr);
+        deferred_flag_ = true;
+        return Result::kDeferEvent;
     }
 
     template <class TargetContext>
@@ -429,6 +499,106 @@ public:
         return TransitImpl<DestState>(std::forward<Action>(action));
     }
 
+    const void* TypeId() const noexcept override {
+        return StaticTypeId();
+    }
+
+    const char* Name() const noexcept override {
+        return detail::PrettyTypeNameCStr<Derived>();
+    }
+
+    static const void* StaticTypeId() noexcept {
+        static const int tag = 0;
+        return &tag;
+    }
+
+protected:
+    State() : p_context_(nullptr) {}
+
+    State(ContextType& context) : p_context_(nullptr) {
+        p_context_ = &context;
+    }
+
+    ~State() {
+        if (p_context_ != nullptr && deferred_flag_) {
+            // Boost.Statechart releases deferred events when a deferring state exits.
+            OutermostContextBase().ReleaseDeferredEvents();
+        }
+    }
+
+private:
+    void SetContext(ContextPtrType p_context) {
+        static_assert(std::is_pointer_v<ContextPtrType>,
+                      "ufsm (scheme 2): ContextPtrType is expected to be a raw pointer type.");
+        p_context_ = p_context;
+    }
+
+    // State transition implementation
+    // DestState: Target state type
+    // Action: Transition action (executed on common parent state)
+    template <class DestState, class Action>
+    [[nodiscard]] Result TransitImpl(Action&& action) {
+        // Find the least common ancestor of source and destination states
+        using CommonCtx = typename mp::FindFirstCommon<ContextTypeList, typename DestState::ContextTypeList>::type;
+        // Find the direct child state of common parent (state to be terminated)
+        using TermState = typename mp::FindChildOf<typename mp::PushFront<ContextTypeList, Derived>::type, CommonCtx>::type;
+
+        // Get the state to terminate and common parent state
+        TermState& term_state(Context<TermState>());
+        CommonCtx& common_ctx = term_state.template Context<CommonCtx>();
+        auto* p_common = &common_ctx;
+        auto& out_base = common_ctx.OutermostContextBase();
+
+#if !defined(NDEBUG)
+        UFSM_ASSERT(!out_base.ufsm_in_transition_);
+        out_base.ufsm_in_transition_ = true;
+        struct UfsmTransitionGuard {
+            bool* f;
+            ~UfsmTransitionGuard() { *f = false; }
+        } guard{&out_base.ufsm_in_transition_};
+#endif
+
+        // 1. Terminate all substates from term_state to current state
+        out_base.TerminateAsPartOfTransit(term_state);
+        // 2. Execute transition action on common parent state
+        InvokeTransitionAction(std::forward<Action>(action), common_ctx);
+        // 3. Construct the path from common parent to destination state
+        detail::Constructor<typename detail::MakeContextList<CommonCtx, DestState>::type, OutermostContextBaseType>::Construct(
+            p_common, out_base);
+
+        return Result::kConsumed;
+    }
+
+    template <typename... Reactions>
+    Result LocalReact(const detail::EventBase& event, mp::List<Reactions...>) {
+        Result res = Result::kNoReaction;
+        (void)((res = Reactions::React(*static_cast<Derived*>(this), event),
+                res != Result::kNoReaction) ||
+               ...);
+        return res == Result::kNoReaction ? Result::kForwardEvent : res;
+    }
+
+    // Internal plumbing used by transitions/deferral.
+    OutermostContextBaseType& OutermostContextBase() {
+        return p_context_->OutermostContextBase();
+    }
+
+    Result ReactImpl(const detail::EventBase& event) override {
+        StaticChecks();
+        auto res = LocalReact(event, typename Derived::reactions{});
+        if (res == Result::kForwardEvent) {
+            return p_context_->ReactImpl(event);
+        }
+        return res;
+    }
+
+    template <typename, typename, typename>
+    friend class ufsm::State;
+    template <class, class>
+    friend class ufsm::StateMachine;
+    template <class, class>
+    friend struct ufsm::detail::Constructor;
+
     static void DeepConstruct(const ContextPtrType& p_context, OutermostContextBaseType& out_context) {
         auto* p_inner = ShallowConstruct(p_context, out_context);
         if constexpr (!std::is_same_v<void, InnerInitial>) {
@@ -449,88 +619,13 @@ public:
         return out_context.Add(std::move(p_inner), p_context);
     }
 
-    template <class TargetContext>
-    [[nodiscard]] typename TargetContext::InnerContextPtrType ContextPtr() const {
-        if constexpr (std::is_same_v<TargetContext, ContextType>) {
-            return p_context_;
-        } else {
-            return p_context_->template ContextPtr<TargetContext>();
-        }
-    }
-
-    Result ReactImpl(const detail::EventBase& event) override {
-        StaticChecks();
-        auto res = LocalReact(event, typename Derived::reactions{});
-        if (res == Result::kForwardEvent) {
-            return p_context_->ReactImpl(event);
-        }
-        return res;
-    }
-
-protected:
-    State() : p_context_(nullptr) {}
-
-    State(ContextType& context) : p_context_(nullptr) {
-        p_context_ = &context;
-    }
-
-    ~State() = default;
-
-    void SetContext(ContextPtrType p_context) {
-        static_assert(std::is_pointer_v<ContextPtrType>,
-                      "ufsm (scheme 2): ContextPtrType is expected to be a raw pointer type.");
-        p_context_ = p_context;
-    }
-
-    // State transition implementation
-    // DestState: Target state type
-    // Action: Transition action (executed on common parent state)
-    template <class DestState, class Action>
-    [[nodiscard]] Result TransitImpl(Action&& action) {
-        // Find the least common ancestor of source and destination states
-        using CommonCtx = typename mp::FindFirstCommon<ContextTypeList, typename DestState::ContextTypeList>::type;
-        // Find the direct child state of common parent (state to be terminated)
-        using TermState = typename mp::FindChildOf<typename mp::PushFront<ContextTypeList, Derived>::type, CommonCtx>::type;
-
-        // Get the state to terminate and common parent state
-        TermState& term_state(Context<TermState>());
-        const auto p_common = term_state.template ContextPtr<CommonCtx>();
-        CommonCtx& common_ctx = term_state.template Context<CommonCtx>();
-        auto& out_base = common_ctx.OutermostContextBase();
-
-#if !defined(NDEBUG)
-        UFSM_ASSERT(!out_base.ufsm_in_transition_);
-        out_base.ufsm_in_transition_ = true;
-        struct UfsmTransitionGuard { bool* f; ~UfsmTransitionGuard() { *f = false; } } guard{&out_base.ufsm_in_transition_};
-#endif
-
-        // 1. Terminate all substates from term_state to current state
-        out_base.TerminateAsPartOfTransit(term_state);
-        // 2. Execute transition action on common parent state
-        InvokeTransitionAction(std::forward<Action>(action), common_ctx);
-        // 3. Construct the path from common parent to destination state
-        detail::Constructor<typename detail::MakeContextList<CommonCtx, DestState>::type, OutermostContextBaseType>::Construct(p_common, out_base);
-
-        return Result::kConsumed;
-    }
-
-    template <typename... Reactions>
-    Result LocalReact(const detail::EventBase& event, mp::List<Reactions...>) {
-        Result res = Result::kNoReaction;
-        (void)((res = Reactions::React(*static_cast<Derived*>(this), event),
-                res != Result::kNoReaction) ||
-               ...);
-        return res == Result::kNoReaction ? Result::kForwardEvent : res;
-    }
-
-private:
     static void StaticChecks() {
         static_assert(std::is_base_of_v<State<Derived, ContextState, InnerInitial>, Derived>,
                       "Derived must inherit from ufsm::State<Derived, ContextState, InnerInitial> (CRTP).");
         static_assert(detail::IsMpList<typename Derived::reactions>::value,
                       "Derived::reactions must be ufsm::mp::List<...>.");
         static_assert(detail::AllAreReactionEntries<typename Derived::reactions>::value,
-                  "Derived::reactions must contain only ufsm::Reaction<...> or ufsm::Transition<...,...> entries.");
+                  "Derived::reactions must contain only ufsm::Reaction<...>, ufsm::Transition<...,...>, or ufsm::Deferral<...> entries.");
     }
 
     // Invoke transition action with preference for action(CommonCtx&) over action().
@@ -553,6 +648,8 @@ private:
     // Non-owning pointer to the parent context.
     // Valid only while this state is active; do not cache across transitions.
     ContextPtrType p_context_;
+
+    bool deferred_flag_ = false;
 };
 
 // State machine template class
@@ -592,18 +689,50 @@ public:
     Result ProcessEvent(const Ev& event) {
         static_assert(std::is_base_of_v<detail::EventBase, Ev>,
                       "Event type must derive from ufsm::Event<Ev> (i.e., from ufsm::detail::EventBase).");
-#if !defined(NDEBUG)
-        UFSM_ASSERT(!ufsm_in_transition_);
-#endif
-        const auto res = SendEvent(event);
-        // If the event bubbles all the way to the root and is still forwarded,
-        // treat it as unhandled. Users can optionally define:
-        //   void OnUnhandledEvent(const ufsm::detail::EventBase&)
-        // on the state machine to observe/log/trace.
-        if (res == Result::kForwardEvent) {
-            detail::InvokeOnUnhandledEventIfPresent(*static_cast<Derived*>(this), event);
+        static_assert(!std::is_same_v<std::decay_t<Ev>, detail::EventBase>,
+                      "ProcessEvent expects a concrete event type (derive from ufsm::Event<Derived>), not ufsm::detail::EventBase.");
+        return ProcessEventLoop(event);
+    }
+
+    // Boost-like posted events.
+    // PostEvent() enqueues an event to be processed after the current ProcessEvent()
+    // completes (the event loop drains the posted queue automatically).
+    // This is useful to avoid re-entrancy when an event handler wants to trigger follow-up events.
+    template <class Ev>
+    void PostEvent(Ev&& event) {
+        static_assert(std::is_base_of_v<detail::EventBase, std::decay_t<Ev>>,
+                      "Event type must derive from ufsm::Event<Ev> (i.e., from ufsm::detail::EventBase)." );
+        // Simpler but potentially more alloc-heavy: always clone into EventBase::Ptr.
+        posted_events_.push_back(static_cast<const detail::EventBase&>(event).Clone());
+    }
+
+    // State queries (Boost.Statechart-like).
+    // Returns a pointer to an active state of type StateT if it is currently in the active chain,
+    // otherwise nullptr.
+    template <class StateT>
+    StateT* StatePtr() {
+        return const_cast<StateT*>(static_cast<const StateMachine*>(this)->template StatePtr<StateT>());
+    }
+
+    template <class StateT>
+    const StateT* StatePtr() const {
+        static_assert(std::is_base_of_v<detail::StateBase, StateT>,
+                      "StateT must be a ufsm state type (derive from ufsm::State<...>)." );
+
+        // Linear scan over the active chain (typically shallow).
+        if (!active_path_.empty()) {
+            for (const auto& p_state : active_path_) {
+                if (p_state && p_state->TypeId() == StateT::StaticTypeId()) {
+                    return static_cast<const StateT*>(p_state.get());
+                }
+            }
         }
-        return res;
+        return nullptr;
+    }
+
+    template <class StateT>
+    bool IsInState() const {
+        return this->template StatePtr<StateT>() != nullptr;
     }
 
     template <class TargetContext>
@@ -623,6 +752,17 @@ public:
     const OutermostContextType& OutermostContext() const {
         return *static_cast<const Derived*>(this);
     }
+
+protected:
+    StateMachine() = default;
+
+    virtual ~StateMachine() {
+        TerminateImpl();
+    }
+
+private:
+    template <typename, typename, typename>
+    friend class ufsm::State;
 
     OutermostContextBaseType& OutermostContextBase() {
         return *this;
@@ -658,14 +798,76 @@ public:
         return raw;
     }
 
-protected:
-    StateMachine() = default;
+    Result ProcessEventLoop(const detail::EventBase& event) {
+#if !defined(NDEBUG)
+        UFSM_ASSERT(!ufsm_in_transition_);
+#endif
+        // Boost-like behavior: when ProcessEvent returns, all posted events
+        // have been dispatched (FIFO), preventing re-entrant recursion.
+        if (ufsm_in_event_loop_) {
+            return ProcessEventImpl(event);
+        }
 
-    virtual ~StateMachine() {
-        TerminateImpl();
+        ufsm_in_event_loop_ = true;
+        struct UfsmEventLoopGuard {
+            bool* f;
+            ~UfsmEventLoopGuard() { *f = false; }
+        } guard{&ufsm_in_event_loop_};
+
+        Result last = ProcessEventImpl(event);
+        while (!posted_events_.empty()) {
+            auto ev = std::move(posted_events_.front());
+            posted_events_.pop_front();
+            UFSM_ASSERT(ev != nullptr);
+            // We're already in the event loop; directly dispatch without re-entering
+            // the loop/drain logic.
+            last = ProcessEventImpl(*ev);
+        }
+        return last;
     }
 
-private:
+    const detail::EventBase* CurrentEventPtr() const noexcept {
+        return current_event_;
+    }
+
+    void ReleaseDeferredEvents() {
+        PrependPostedEvents(deferred_events_);
+    }
+
+    void PrependPostedEvents(std::deque<detail::EventBase::Ptr>& events) {
+        if (events.empty()) return;
+        while (!events.empty()) {
+            posted_events_.push_front(std::move(events.back()));
+            events.pop_back();
+        }
+    }
+
+    Result ProcessEventImpl(const detail::EventBase& event) {
+        const detail::EventBase* prev_event = current_event_;
+        current_event_ = &event;
+        struct UfsmCurrentEventGuard {
+            const detail::EventBase** slot;
+            const detail::EventBase* prev;
+            ~UfsmCurrentEventGuard() { *slot = prev; }
+        } current_event_guard{&current_event_, prev_event};
+
+        const auto res = SendEvent(event);
+
+        if (res == Result::kDeferEvent) {
+            deferred_events_.push_back(event.Clone());
+            return Result::kConsumed;
+        }
+
+        // If the event bubbles all the way to the root and is still forwarded,
+        // treat it as unhandled. Users can optionally define:
+        //   void OnUnhandledEvent(const ufsm::detail::EventBase&)
+        // on the state machine to observe/log/trace.
+        if (res == Result::kForwardEvent) {
+            detail::InvokeOnUnhandledEventIfPresent(*static_cast<Derived*>(this), event);
+        }
+        return res;
+    }
+
     // Keeps the outermost-to-innermost prefix of size keep_count and destroys the rest.
     // This provides deterministic destruction order (innermost first).
     void ResetToDepth(std::size_t keep_count) {
@@ -684,6 +886,8 @@ private:
 
     void TerminateImpl() {
         ResetToDepth(0);
+        posted_events_.clear();
+        deferred_events_.clear();
     }
 
     // Termination used by transition boundary semantics.
@@ -716,6 +920,17 @@ private:
     // Outermost-to-innermost active states.
     // Ownership is centralized here; states reference their parent via raw pointer.
     std::vector<std::unique_ptr<detail::StateBase>> active_path_;
+
+    const detail::EventBase* current_event_ = nullptr;
+
+    // FIFO queue of deferred events (Boost.Statechart-like).
+    std::deque<detail::EventBase::Ptr> deferred_events_;
+
+    // FIFO queue of posted events.
+    std::deque<detail::EventBase::Ptr> posted_events_;
+
+    // Prevents recursive event loops; used to implement boost-like posted-event semantics.
+    bool ufsm_in_event_loop_ = false;
 
 };
 

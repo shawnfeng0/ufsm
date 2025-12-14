@@ -62,9 +62,9 @@ States store a raw pointer to their parent context; parents do not own children.
 
 Practical implications:
 
-- `ContextPtr<T>()` returns `T*` (a non-owning pointer).
+- You can take a non-owning pointer view via `&Context<T>()`.
 - The pointer is valid only while the corresponding state is active.
-- Do not cache `ContextPtr<T>()` across transitions or after `Terminate()`.
+- Do not cache the pointer across transitions or after `Terminate()`.
 
 This design avoids reference-counting overhead and makes state lifetime explicit and deterministic.
 

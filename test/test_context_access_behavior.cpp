@@ -13,7 +13,7 @@ struct CtxLeafB;
 struct CtxTop2;
 
 FSM_STATE_MACHINE(ContextAccessMachine, CtxParent) {
-    // Minimal coverage for ContextPtr<T>() API.
+    // Minimal coverage for pointer-style access to Context<T>() via &Context<T>().
     bool parent_ptr_non_null_in_a = false;
     bool parent_ptr_non_null_in_ping_b = false;
     bool parent_ptr_non_null_in_to_top2 = false;
@@ -46,7 +46,7 @@ FSM_STATE(CtxLeafA, CtxParent) {
         // Also prove we can access and mutate the outermost context.
         OutermostContext().outermost_counter++;
 
-        OutermostContext().parent_ptr_non_null_in_a = (ContextPtr<CtxParent>() != nullptr);
+        OutermostContext().parent_ptr_non_null_in_a = (&Context<CtxParent>() != nullptr);
 
         // Sibling transition under common parent.
         return Transit<CtxLeafB>();
@@ -62,7 +62,7 @@ FSM_STATE(CtxLeafB, CtxParent) {
 
     ufsm::Result React(const CtxEventPingB&) {
         OutermostContext().ping_b_calls++;
-        OutermostContext().parent_ptr_non_null_in_ping_b = (ContextPtr<CtxParent>() != nullptr);
+        OutermostContext().parent_ptr_non_null_in_ping_b = (&Context<CtxParent>() != nullptr);
         return ufsm::consume_event();
     }
 
@@ -71,7 +71,7 @@ FSM_STATE(CtxLeafB, CtxParent) {
         auto& parent = Context<CtxParent>();
         OutermostContext().parent_value_seen_in_b = parent.value;
 
-        OutermostContext().parent_ptr_non_null_in_to_top2 = (ContextPtr<CtxParent>() != nullptr);
+        OutermostContext().parent_ptr_non_null_in_to_top2 = (&Context<CtxParent>() != nullptr);
 
         OutermostContext().transit_to_top2_calls++;
 
