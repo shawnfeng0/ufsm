@@ -93,6 +93,10 @@ enum class Result {
     kConsumed      // Event consumed (handled)
 };
 
+// Forward declaration for diagnostics traits (defined later).
+template <class EventType>
+class Reaction;
+
 namespace detail {
 
 template <typename T>
@@ -100,6 +104,39 @@ struct IsMpList : std::false_type {};
 
 template <typename... Ts>
 struct IsMpList<mp::List<Ts...>> : std::true_type {};
+
+template <typename T>
+struct IsReaction : std::false_type {};
+
+template <typename EventType>
+struct IsReaction<Reaction<EventType>> : std::true_type {};
+
+template <typename ListType>
+struct AllAreReactions;
+
+template <typename... Ts>
+struct AllAreReactions<mp::List<Ts...>> : std::bool_constant<(IsReaction<Ts>::value && ...)> {};
+
+template <typename StateType, typename EventType, typename = void>
+struct HasReactMethod : std::false_type {};
+
+template <typename StateType, typename EventType>
+struct HasReactMethod<StateType,
+                      EventType,
+                      std::void_t<decltype(std::declval<StateType&>().React(std::declval<const EventType&>()))>>
+    : std::true_type {};
+
+template <typename StateType, typename EventType, typename = void>
+struct ReactReturnType {
+    using type = void;
+};
+
+template <typename StateType, typename EventType>
+struct ReactReturnType<StateType,
+                       EventType,
+                       std::void_t<decltype(std::declval<StateType&>().React(std::declval<const EventType&>()))>> {
+    using type = decltype(std::declval<StateType&>().React(std::declval<const EventType&>()));
+};
 
 class EventBase {
 protected:
@@ -163,6 +200,14 @@ public:
     static Result React(StateType& state, const EventBaseType& event) {
         static_assert(std::is_base_of_v<detail::EventBase, EventType>,
                       "EventType must derive from ufsm::Event<EventType> (i.e., from ufsm::detail::EventBase).");
+
+        static_assert(detail::HasReactMethod<StateType, EventType>::value,
+                      "StateType must implement React(const EventType&) (returning void or ufsm::Result).");
+
+        using ReturnT = typename detail::ReactReturnType<StateType, EventType>::type;
+        static_assert(std::is_void_v<ReturnT> || std::is_same_v<ReturnT, ufsm::Result>,
+                      "React(const EventType&) must return void or ufsm::Result.");
+
         // RTTI-free match: compare type identity, then static_cast.
         if (event.TypeId() == EventType::StaticTypeId()) {
             const auto& casted_event = static_cast<const EventType&>(event);
@@ -332,6 +377,12 @@ protected:
         CommonCtx& common_ctx = term_state.template Context<CommonCtx>();
         auto& out_base = common_ctx.OutermostContextBase();
 
+#if !defined(NDEBUG)
+        UFSM_ASSERT(!out_base.ufsm_in_transition_);
+        out_base.ufsm_in_transition_ = true;
+        struct UfsmTransitionGuard { bool* f; ~UfsmTransitionGuard() { *f = false; } } guard{&out_base.ufsm_in_transition_};
+#endif
+
         // 1. Terminate all substates from term_state to current state
         out_base.TerminateAsPartOfTransit(term_state);
         // 2. Execute transition action on common parent state
@@ -357,6 +408,8 @@ private:
                       "Derived must inherit from ufsm::State<Derived, ContextState, InnerInitial> (CRTP).");
         static_assert(detail::IsMpList<typename Derived::reactions>::value,
                       "Derived::reactions must be ufsm::mp::List<...>.");
+        static_assert(detail::AllAreReactions<typename Derived::reactions>::value,
+                      "Derived::reactions must contain only ufsm::Reaction<...> entries.");
     }
 
     // Invoke transition action with preference for action(CommonCtx&) over action().
@@ -399,13 +452,14 @@ public:
                       "Derived must inherit from ufsm::StateMachine<Derived, InnerInitial> (CRTP).");
         static_assert(std::is_base_of_v<detail::StateBase, InnerInitial>,
                       "InnerInitial must be a ufsm state type (derive from ufsm::State<...>)." );
-        UFSM_ASSERT(!in_transition_);
         TerminateImpl();
         InnerInitial::DeepConstruct(static_cast<Derived*>(this), *static_cast<Derived*>(this));
     }
 
     void Terminate() {
-        UFSM_ASSERT(!in_transition_);
+#if !defined(NDEBUG)
+        UFSM_ASSERT(!ufsm_in_transition_);
+#endif
         TerminateImpl();
     }
 
@@ -417,10 +471,9 @@ public:
     Result ProcessEvent(const Ev& event) {
         static_assert(std::is_base_of_v<detail::EventBase, Ev>,
                       "Event type must derive from ufsm::Event<Ev> (i.e., from ufsm::detail::EventBase).");
-        // Debug-only: Disallow re-entrant event processing while a transition
-        // is in progress (e.g., from within a Transit action).
-        UFSM_ASSERT(!in_transition_);
-        DebugAssertConsistency();
+#if !defined(NDEBUG)
+        UFSM_ASSERT(!ufsm_in_transition_);
+#endif
         return SendEvent(event);
     }
 
@@ -447,18 +500,12 @@ public:
     }
 
     void TerminateAsPartOfTransit(detail::StateBase& state) {
-#if !defined(NDEBUG)
-        UFSM_ASSERT(!in_transition_);
-#endif
         TerminateImpl(state);
-
-    #if !defined(NDEBUG)
-        // A transition is considered "in progress" after the boundary has been
-        // terminated (leaf cleared) and remains so until a new leaf is constructed.
-        UFSM_ASSERT(current_state_ == nullptr);
-        in_transition_ = true;
-    #endif
     }
+
+#if !defined(NDEBUG)
+    bool ufsm_in_transition_ = false;
+#endif
 
     Result ReactImpl(const detail::EventBase&) {
         return Result::kForwardEvent;
@@ -477,15 +524,7 @@ public:
 
         if constexpr (is_leaf) {
             current_state_ = raw;
-
-#if !defined(NDEBUG)
-            if (in_transition_) {
-                in_transition_ = false;
-            }
-#endif
         }
-
-        DebugAssertConsistency();
 
         return raw;
     }
@@ -494,35 +533,10 @@ protected:
     StateMachine() = default;
 
     virtual ~StateMachine() {
-        UFSM_ASSERT(!in_transition_);
         TerminateImpl();
     }
 
 private:
-#if !defined(NDEBUG)
-    void DebugAssertConsistency() const {
-        if (in_transition_) {
-            UFSM_ASSERT(current_state_ == nullptr);
-        }
-        if (active_path_.empty()) {
-            UFSM_ASSERT(current_state_ == nullptr);
-            return;
-        }
-
-        for (std::size_t i = 0; i < active_path_.size(); ++i) {
-            UFSM_ASSERT(active_path_[i] != nullptr);
-            UFSM_ASSERT(active_path_[i]->ActiveIndex() == i);
-        }
-
-        if (current_state_) {
-            UFSM_ASSERT(active_path_.back().get() == current_state_);
-            UFSM_ASSERT(current_state_->ActiveIndex() == active_path_.size() - 1);
-        }
-    }
-#else
-    void DebugAssertConsistency() const {}
-#endif
-
     // Keeps the outermost-to-innermost prefix of size keep_count and destroys the rest.
     // This provides deterministic destruction order (innermost first).
     void ResetToDepth(std::size_t keep_count) {
@@ -547,10 +561,8 @@ private:
     // Destroys states from the current leaf up to and including the given boundary state.
     // The parent of the boundary remains alive and becomes the construction anchor.
     void TerminateImpl(detail::StateBase& state) {
-        DebugAssertConsistency();
         if (active_path_.empty()) {
             current_state_ = nullptr;
-            DebugAssertConsistency();
             return;
         }
 
@@ -576,11 +588,6 @@ private:
     // Ownership is centralized here; states reference their parent via raw pointer.
     std::vector<std::unique_ptr<detail::StateBase>> active_path_;
 
-#if !defined(NDEBUG)
-    bool in_transition_ = false;
-#else
-    static constexpr bool in_transition_ = false;
-#endif
 };
 
 } // namespace ufsm
