@@ -232,9 +232,6 @@ private:
 // - helpers `forward_event()`, `discard_event()`, `consume_event()`.
 // Prefer these helpers in user code (similar to boost::statechart).
 [[nodiscard]] constexpr Result forward_event() noexcept { return Result::kForwardEvent; }
-// Boost.Statechart-like naming: "no_reaction" means "not handled here".
-// In ufsm this is expressed as forwarding the event to the parent context.
-[[nodiscard]] constexpr Result no_reaction() noexcept { return Result::kForwardEvent; }
 [[nodiscard]] constexpr Result discard_event() noexcept { return Result::kDiscardEvent; }
 [[nodiscard]] constexpr Result consume_event() noexcept { return Result::kConsumed; }
 
