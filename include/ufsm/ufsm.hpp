@@ -187,6 +187,9 @@ private:
 // - helpers `forward_event()`, `discard_event()`, `consume_event()`.
 // Prefer these helpers in user code (similar to boost::statechart).
 [[nodiscard]] constexpr Result forward_event() noexcept { return Result::kForwardEvent; }
+// Boost.Statechart-like naming: "no_reaction" means "not handled here".
+// In ufsm this is expressed as forwarding the event to the parent context.
+[[nodiscard]] constexpr Result no_reaction() noexcept { return Result::kForwardEvent; }
 [[nodiscard]] constexpr Result discard_event() noexcept { return Result::kDiscardEvent; }
 [[nodiscard]] constexpr Result consume_event() noexcept { return Result::kConsumed; }
 
@@ -272,6 +275,24 @@ template <class EventType, class DestState, class Action = std::nullptr_t>
 using transition = Transition<EventType, DestState, Action>;
 
 namespace detail {
+
+template <typename MachineType, typename = void>
+struct HasOnUnhandledEventMethod : std::false_type {};
+
+template <typename MachineType>
+struct HasOnUnhandledEventMethod<MachineType,
+                                 std::void_t<decltype(std::declval<MachineType&>().OnUnhandledEvent(
+                                     std::declval<const EventBase&>()))>> : std::true_type {};
+
+template <typename MachineType>
+inline void InvokeOnUnhandledEventIfPresent(MachineType& machine, const EventBase& event) {
+    if constexpr (HasOnUnhandledEventMethod<MachineType>::value) {
+        machine.OnUnhandledEvent(event);
+    } else {
+        (void)machine;
+        (void)event;
+    }
+}
 
 template <typename EventType, typename DestState, typename Action>
 struct IsTransition<Transition<EventType, DestState, Action>> : std::true_type {};
@@ -528,7 +549,15 @@ public:
 #if !defined(NDEBUG)
         UFSM_ASSERT(!ufsm_in_transition_);
 #endif
-        return SendEvent(event);
+        const auto res = SendEvent(event);
+        // If the event bubbles all the way to the root and is still forwarded,
+        // treat it as unhandled. Users can optionally define:
+        //   void OnUnhandledEvent(const ufsm::detail::EventBase&)
+        // on the state machine to observe/log/trace.
+        if (res == Result::kForwardEvent) {
+            detail::InvokeOnUnhandledEventIfPresent(*static_cast<Derived*>(this), event);
+        }
+        return res;
     }
 
     template <class TargetContext>

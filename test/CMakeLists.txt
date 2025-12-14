@@ -19,6 +19,7 @@ add_executable(ufsm_test
   test_idempotency_behavior.cpp
   test_transition_boundary_behavior.cpp
   test_context_access_behavior.cpp
+  test_unhandled_event_hook_behavior.cpp
 )
 
 target_link_libraries(ufsm_test
