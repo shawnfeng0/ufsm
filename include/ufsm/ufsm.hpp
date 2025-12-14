@@ -527,12 +527,11 @@ private:
     // This provides deterministic destruction order (innermost first).
     void ResetToDepth(std::size_t keep_count) {
         if (keep_count > active_path_.size()) keep_count = active_path_.size();
-        current_state_ = nullptr;
         while (active_path_.size() > keep_count) {
             active_path_.pop_back();
         }
 
-        DebugAssertConsistency();
+        current_state_ = active_path_.empty() ? nullptr : active_path_.back().get();
     }
 
     Result SendEvent(const detail::EventBase& event) {
