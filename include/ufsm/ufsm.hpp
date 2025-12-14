@@ -85,6 +85,12 @@ struct BuildPath<List<Head, Tail...>, StopType> {
 
 } // namespace mp
 
+// User-facing alias to avoid exposing the internal `mp` namespace in common code.
+// Example:
+//   using reactions = ufsm::List<ufsm::Reaction<Ev1>, ufsm::Transition<Ev2, Next>>;
+template <typename... Types>
+using List = mp::List<Types...>;
+
 // Event handling result types.
 enum class Result {
     kNoReaction,   // Event not handled
@@ -111,11 +117,14 @@ struct IsReaction : std::false_type {};
 template <typename EventType>
 struct IsReaction<Reaction<EventType>> : std::true_type {};
 
+template <typename T>
+struct IsTransition : std::false_type {};
+
 template <typename ListType>
-struct AllAreReactions;
+struct AllAreReactionEntries;
 
 template <typename... Ts>
-struct AllAreReactions<mp::List<Ts...>> : std::bool_constant<(IsReaction<Ts>::value && ...)> {};
+struct AllAreReactionEntries<mp::List<Ts...>> : std::bool_constant<((IsReaction<Ts>::value || IsTransition<Ts>::value) && ...)> {};
 
 template <typename StateType, typename EventType, typename = void>
 struct HasReactMethod : std::false_type {};
@@ -223,6 +232,51 @@ public:
         return Result::kNoReaction;
     }
 };
+
+// Boost.Statechart-like declarative transition entry.
+// Usage in a state:
+//   using reactions = ufsm::mp::List<
+//     ufsm::Transition<MyEvent, NextState>,
+//     ufsm::Transition<MyEvent2, NextState2, MyAction>,
+//     ufsm::Reaction<OtherEvent>
+//   >;
+// This allows simple "event -> next state" without defining a React() function.
+// If Action is provided, it is default-constructed and executed on the least common
+// ancestor context, using the same rules as Transit<Dest>(action):
+//   - action(CommonCtx&) is preferred when applicable
+//   - otherwise action() is accepted
+template <class EventType, class DestState, class Action = std::nullptr_t>
+class Transition {
+public:
+    template <typename StateType, typename EventBaseType>
+    static Result React(StateType& state, const EventBaseType& event) {
+        static_assert(std::is_base_of_v<detail::EventBase, EventType>,
+                      "EventType must derive from ufsm::Event<EventType> (i.e., from ufsm::detail::EventBase).\n");
+
+        if (event.TypeId() == EventType::StaticTypeId()) {
+            (void)static_cast<const EventType&>(event);
+            if constexpr (std::is_same_v<Action, std::nullptr_t>) {
+                return state.template Transit<DestState>();
+            } else {
+                static_assert(std::is_default_constructible_v<Action>,
+                              "ufsm::Transition<...> with Action requires Action to be default constructible.");
+                return state.template Transit<DestState>(Action{});
+            }
+        }
+        return Result::kNoReaction;
+    }
+};
+
+// Optional Boost-like alias name (lowercase) for readability.
+template <class EventType, class DestState, class Action = std::nullptr_t>
+using transition = Transition<EventType, DestState, Action>;
+
+namespace detail {
+
+template <typename EventType, typename DestState, typename Action>
+struct IsTransition<Transition<EventType, DestState, Action>> : std::true_type {};
+
+} // namespace detail
 
 namespace detail {
 
@@ -408,8 +462,8 @@ private:
                       "Derived must inherit from ufsm::State<Derived, ContextState, InnerInitial> (CRTP).");
         static_assert(detail::IsMpList<typename Derived::reactions>::value,
                       "Derived::reactions must be ufsm::mp::List<...>.");
-        static_assert(detail::AllAreReactions<typename Derived::reactions>::value,
-                      "Derived::reactions must contain only ufsm::Reaction<...> entries.");
+        static_assert(detail::AllAreReactionEntries<typename Derived::reactions>::value,
+                  "Derived::reactions must contain only ufsm::Reaction<...> or ufsm::Transition<...,...> entries.");
     }
 
     // Invoke transition action with preference for action(CommonCtx&) over action().

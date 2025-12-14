@@ -12,6 +12,7 @@ FetchContent_MakeAvailable(googletest)
 
 # Build a single test binary from all test sources in this directory.
 add_executable(ufsm_test
+  test_declarative_transition_behavior.cpp
   test_multi_layer_lifecycle.cpp
   test_destructor_behavior.cpp
   test_event_routing_behavior.cpp
