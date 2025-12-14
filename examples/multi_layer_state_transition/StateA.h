@@ -21,7 +21,8 @@ FSM_STATE(StateAAA, StateAA, StateAAAA) { MARK_CLASS(StateAAA); };
 FSM_STATE(StateAAAA, StateAAA) {
   using reactions =
       ufsm::mp::List<ufsm::Reaction<EventA>, ufsm::Reaction<EventB>>;
-  ufsm::Result React(const EventA&) {
+  ufsm::Result React(const EventA& evt) {
+    LOG << evt.Name() << " received in StateAAAA" << std::endl;
     Context<StateA>().state_a_context_string = "set-before-transit";
     MARK_FUNCTION;
     // Transition action runs on the least common ancestor context (here it's StateA).

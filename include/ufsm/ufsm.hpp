@@ -3,6 +3,8 @@
 #include <cstddef>
 #include <cassert>
 #include <memory>
+#include <string>
+#include <string_view>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -105,6 +107,45 @@ class Reaction;
 
 namespace detail {
 
+// Best-effort, header-only type name extraction for diagnostics.
+// This is intended for logging/tracing (e.g., OnUnhandledEvent), not for stable IDs.
+template <typename T>
+constexpr std::string_view PrettyTypeName() {
+#if defined(__clang__)
+    std::string_view p = __PRETTY_FUNCTION__;
+    // "std::string_view ufsm::detail::PrettyTypeName() [T = X]"
+    const auto start = p.find("T = ");
+    const auto end = p.rfind(']');
+    if (start == std::string_view::npos || end == std::string_view::npos || end <= start + 4) return p;
+    return p.substr(start + 4, end - (start + 4));
+#elif defined(__GNUC__)
+    std::string_view p = __PRETTY_FUNCTION__;
+    // "constexpr std::string_view ufsm::detail::PrettyTypeName() [with T = X; std::string_view = ...]"
+    const auto start = p.find("T = ");
+    if (start == std::string_view::npos) return p;
+    const auto end = p.find(';', start);
+    if (end == std::string_view::npos || end <= start + 4) return p;
+    return p.substr(start + 4, end - (start + 4));
+#elif defined(_MSC_VER)
+    std::string_view p = __FUNCSIG__;
+    // "class std::basic_string_view<char,struct std::char_traits<char> > __cdecl ufsm::detail::PrettyTypeName<...>(void)"
+    const auto start = p.find("PrettyTypeName<");
+    if (start == std::string_view::npos) return p;
+    const auto inner = p.substr(start + std::string_view("PrettyTypeName<").size());
+    const auto end = inner.find(">(");
+    if (end == std::string_view::npos) return p;
+    return inner.substr(0, end);
+#else
+    return std::string_view{"<type>"};
+#endif
+}
+
+template <typename T>
+inline const char* PrettyTypeNameCStr() {
+    static const std::string s{PrettyTypeName<T>()};
+    return s.c_str();
+}
+
 template <typename T>
 struct IsMpList : std::false_type {};
 
@@ -158,6 +199,10 @@ public:
     // NOTE: This is unique per process image, but not stable across DSOs/plugins.
     const void* TypeId() const noexcept { return type_id_; }
 
+    // Human-readable name for diagnostics/logging.
+    // Default implementation is generic; ufsm::Event<Derived> overrides this.
+    virtual const char* Name() const noexcept { return "<ufsm::event>"; }
+
 private:
     const void* type_id_;
 };
@@ -197,6 +242,10 @@ template <typename Derived>
 class Event : public detail::EventBase {
 public:
     Event() noexcept : detail::EventBase(StaticTypeId()) {}
+
+    const char* Name() const noexcept override {
+        return detail::PrettyTypeNameCStr<Derived>();
+    }
 
     static const void* StaticTypeId() noexcept {
         static const int tag = 0;
