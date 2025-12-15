@@ -32,13 +32,13 @@ FSM_STATE(ERParent, EventRoutingMachine, ERChild) {
 
     ufsm::Result React(const EREventForwardToParent&) {
         OutermostContext().parent_called++;
-        return ufsm::consume_event();
+        return consume_event();
     }
 
     ufsm::Result React(const EREventDiscardAtChild&) {
         // If the child returns do_discard_event correctly, the parent must not see this.
         OutermostContext().parent_called++;
-        return ufsm::consume_event();
+        return consume_event();
     }
 
     TRACK_LIFECYCLE(ERParent);
@@ -52,12 +52,12 @@ FSM_STATE(ERChild, ERParent) {
 
     ufsm::Result React(const EREventForwardToParent&) {
         OutermostContext().child_forward_called++;
-        return ufsm::forward_event();
+        return forward_event();
     }
 
     ufsm::Result React(const EREventDiscardAtChild&) {
         OutermostContext().child_discard_called++;
-        return ufsm::discard_event();
+        return discard_event();
     }
 
     TRACK_LIFECYCLE(ERChild);

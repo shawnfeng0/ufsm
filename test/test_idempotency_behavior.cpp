@@ -32,7 +32,7 @@ FSM_STATE(ILeaf, IParent) {
 
     ufsm::Result React(const IEventHandled&) {
         OutermostContext().handled_calls++;
-        return ufsm::consume_event();
+        return consume_event();
     }
 
     TRACK_LIFECYCLE(ILeaf);

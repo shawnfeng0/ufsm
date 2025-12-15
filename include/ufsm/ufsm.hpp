@@ -107,6 +107,12 @@ enum class Result {
 template <class EventType>
 class Reaction;
 
+template <class EventType, class DestState, class Action>
+class Transition;
+
+template <class EventType>
+class Deferral;
+
 // Forward declarations for friend relationships between framework internals.
 template <typename Derived, typename InnerInitial>
 class StateMachine;
@@ -251,15 +257,6 @@ private:
 
 } // namespace detail
 
-// Public API surface:
-// - `ufsm::Result` follows Google C++ style (type names are CamelCase).
-// - helpers `forward_event()`, `discard_event()`, `consume_event()`.
-// Note: `Result::kDeferEvent` is used internally by `State::defer_event()`.
-// Prefer these helpers in user code (similar to boost::statechart).
-[[nodiscard]] constexpr Result forward_event() noexcept { return Result::kForwardEvent; }
-[[nodiscard]] constexpr Result discard_event() noexcept { return Result::kDiscardEvent; }
-[[nodiscard]] constexpr Result consume_event() noexcept { return Result::kConsumed; }
-
 template <typename Derived>
 class Event : public detail::EventBase {
 public:
@@ -274,6 +271,14 @@ public:
                       "Events must be copy constructible to be deferred as ufsm::detail::EventBase.");
         return detail::EventBase::Ptr(new Derived(static_cast<const Derived&>(*this)));
     }
+
+private:
+    template <class>
+    friend class ::ufsm::Reaction;
+    template <class, class, class>
+    friend class ::ufsm::Transition;
+    template <class>
+    friend class ::ufsm::Deferral;
 
     static const void* StaticTypeId() noexcept {
         static const int tag = 0;
@@ -499,6 +504,11 @@ public:
         return TransitImpl<DestState>(std::forward<Action>(action));
     }
 
+    // Boost.Statechart-like convenience APIs.
+    [[nodiscard]] constexpr Result forward_event() const noexcept { return Result::kForwardEvent; }
+    [[nodiscard]] constexpr Result discard_event() const noexcept { return Result::kDiscardEvent; }
+    [[nodiscard]] constexpr Result consume_event() const noexcept { return Result::kConsumed; }
+
     const void* TypeId() const noexcept override {
         return StaticTypeId();
     }
@@ -507,6 +517,7 @@ public:
         return detail::PrettyTypeNameCStr<Derived>();
     }
 
+private:
     static const void* StaticTypeId() noexcept {
         static const int tag = 0;
         return &tag;

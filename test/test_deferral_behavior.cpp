@@ -37,12 +37,12 @@ struct Focused : ufsm::State<Focused, Sm> {
 
     ufsm::Result React(const EvShutterFull&) {
         OutermostContext().seq.push_back(1);
-        return ufsm::consume_event();
+           return consume_event();
     }
 
     ufsm::Result React(const EvMarker&) {
         OutermostContext().seq.push_back(2);
-        return ufsm::consume_event();
+           return consume_event();
     }
 };
 
@@ -88,12 +88,12 @@ struct FocusedAny : ufsm::State<FocusedAny, SmAny> {
 
     ufsm::Result React(const EvShutterFull&) {
         OutermostContext().seq.push_back(1);
-        return ufsm::consume_event();
+           return consume_event();
     }
 
     ufsm::Result React(const EvMarker&) {
         OutermostContext().seq.push_back(2);
-        return ufsm::consume_event();
+           return consume_event();
     }
 };
 
@@ -143,7 +143,7 @@ struct DeferB : ufsm::State<DeferB, DeferSm> {
 
     ufsm::Result React(const EvPayload&) {
         OutermostContext().seq.push_back(42);
-        return ufsm::consume_event();
+           return consume_event();
     }
 };
 

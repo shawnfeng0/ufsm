@@ -24,7 +24,7 @@ FSM_STATE(UHLeaf, UHTop) {
     >;
 
     ufsm::Result React(const UHEvHandled&) {
-        return ufsm::consume_event();
+        return consume_event();
     }
 };
 

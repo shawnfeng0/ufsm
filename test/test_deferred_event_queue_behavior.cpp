@@ -34,7 +34,7 @@ FSM_STATE(DQStateB, DQTop) {
 
     ufsm::Result React(const DEvSecond&) {
         OutermostContext().second_seen++;
-        return ufsm::consume_event();
+            return consume_event();
     }
 };
 

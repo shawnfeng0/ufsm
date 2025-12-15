@@ -31,7 +31,7 @@ FSM_STATE(StateA, Root) {
 
 	ufsm::Result React(const EvPing&) {
 		OutermostContext().pings++;
-		return ufsm::consume_event();
+		return consume_event();
 	}
 
 	ufsm::Result React(const EvToB&) {
