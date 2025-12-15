@@ -26,7 +26,7 @@ FSM_STATE(IParent, IdempotencyMachine, ILeaf) {
 };
 
 FSM_STATE(ILeaf, IParent) {
-    using reactions = ufsm::mp::List<
+    using reactions = ufsm::List<
         ufsm::Reaction<IEventHandled>
     >;
 

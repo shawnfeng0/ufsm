@@ -18,13 +18,13 @@ struct Connecting;
 struct Disconnecting;
 
 FSM_STATE(Disconnected, Connector) {
-  using reactions = ufsm::mp::List<ufsm::Reaction<EvConnect>>;
+  using reactions = ufsm::List<ufsm::Reaction<EvConnect>>;
   ufsm::Result React(const EvConnect &) { return Transit<Connecting>(); }
   MARK_CLASS(Disconnected);
 };
 
 FSM_STATE(Connecting, Connector) {
-  using reactions = ufsm::mp::List<ufsm::Reaction<EvConnectFailure>,
+  using reactions = ufsm::List<ufsm::Reaction<EvConnectFailure>,
                                    ufsm::Reaction<EvConnectSuccess>>;
   ufsm::Result React(const EvConnectSuccess &) {
     return Transit<Connected>();
@@ -38,14 +38,14 @@ FSM_STATE(Connecting, Connector) {
 FSM_STATE(Connected, Connector, Working) {
   MARK_CLASS(Connected);
 
-  using reactions = ufsm::mp::List<ufsm::Reaction<EvDisconnect>>;
+  using reactions = ufsm::List<ufsm::Reaction<EvDisconnect>>;
   ufsm::Result React(const EvDisconnect &) {
     return Transit<Disconnecting>();
   }
 };
 
 FSM_STATE(Working, Connected) {
-  using reactions = ufsm::mp::List<ufsm::Reaction<EvTick>>;
+  using reactions = ufsm::List<ufsm::Reaction<EvTick>>;
   ufsm::Result React(const EvTick &) {
     MARK_FUNCTION;
     return discard_event();
@@ -54,7 +54,7 @@ FSM_STATE(Working, Connected) {
 };
 
 FSM_STATE(Disconnecting, Connector) {
-  using reactions = ufsm::mp::List<ufsm::Reaction<EvDisconnectSuccess>>;
+  using reactions = ufsm::List<ufsm::Reaction<EvDisconnectSuccess>>;
   ufsm::Result React(const EvDisconnectSuccess &) {
     return Transit<Disconnected>();
   }

@@ -34,7 +34,7 @@ FSM_STATE(CtxParent, ContextAccessMachine, CtxLeafA) {
 };
 
 FSM_STATE(CtxLeafA, CtxParent) {
-    using reactions = ufsm::mp::List<
+    using reactions = ufsm::List<
         ufsm::Reaction<CtxEventToB>
     >;
 
@@ -56,7 +56,7 @@ FSM_STATE(CtxLeafA, CtxParent) {
 };
 
 FSM_STATE(CtxLeafB, CtxParent) {
-    using reactions = ufsm::mp::List<
+    using reactions = ufsm::List<
         ufsm::Reaction<CtxEventPingB>,
         ufsm::Reaction<CtxEventToTop2>
     >;

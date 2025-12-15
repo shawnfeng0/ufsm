@@ -36,7 +36,7 @@ FSM_STATE(DTTop, DeclarativeTransitionMachine, DTStateA) {
 
 // DTEventToB triggers a direct state transition without defining React().
 FSM_STATE(DTStateA, DTTop) {
-    using reactions = ufsm::mp::List<
+    using reactions = ufsm::List<
         ufsm::Transition<DTEventToB, DTStateB>
     >;
 
@@ -64,7 +64,7 @@ struct DTSiblingAction {
 
 
 FSM_STATE(DTLeafA, DTParent) {
-    using reactions = ufsm::mp::List<
+    using reactions = ufsm::List<
         ufsm::Transition<DTEventToSiblingWithAction, DTLeafB, DTSiblingAction>
     >;
 
@@ -91,7 +91,7 @@ struct DTTopLevelAction {
 
 
 FSM_STATE(DTTop1Leaf, DTTop1) {
-    using reactions = ufsm::mp::List<
+    using reactions = ufsm::List<
         ufsm::Transition<DTEventToTop2WithAction, DTTop2, DTTopLevelAction>
     >;
 

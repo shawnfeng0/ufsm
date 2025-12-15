@@ -35,7 +35,7 @@ FSM_STATE(DStateAAA, DStateAA, DStateAAAA) {
 };
 
 FSM_STATE(DStateAAAA, DStateAAA) {
-    using reactions = ufsm::mp::List<
+    using reactions = ufsm::List<
         ufsm::Reaction<DEventGoToB>
     >;
 

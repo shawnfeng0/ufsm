@@ -35,7 +35,7 @@ FSM_STATE(TBParent, TransitionBoundaryMachine, TBLeafA) {
 };
 
 FSM_STATE(TBLeafA, TBParent) {
-    using reactions = ufsm::mp::List<
+    using reactions = ufsm::List<
         ufsm::Reaction<TBEventToB>,
         ufsm::Reaction<TBEventToBWithAction>,
         ufsm::Reaction<TBEventToBWithNoArgAction>
@@ -78,7 +78,7 @@ FSM_STATE(TBTop1, TransitionTopLevelMachine, TBTop1Leaf) {
 };
 
 FSM_STATE(TBTop1Leaf, TBTop1) {
-    using reactions = ufsm::mp::List<
+    using reactions = ufsm::List<
         ufsm::Reaction<TBEventToTop2>,
         ufsm::Reaction<TBEventToTop2WithAction>
     >;

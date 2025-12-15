@@ -25,7 +25,7 @@ FSM_STATE_MACHINE(EventRoutingMachine, ERParent) {
 
 // Parent -> Child
 FSM_STATE(ERParent, EventRoutingMachine, ERChild) {
-    using reactions = ufsm::mp::List<
+    using reactions = ufsm::List<
         ufsm::Reaction<EREventForwardToParent>,
         ufsm::Reaction<EREventDiscardAtChild>
     >;
@@ -45,7 +45,7 @@ FSM_STATE(ERParent, EventRoutingMachine, ERChild) {
 };
 
 FSM_STATE(ERChild, ERParent) {
-    using reactions = ufsm::mp::List<
+    using reactions = ufsm::List<
         ufsm::Reaction<EREventForwardToParent>,
         ufsm::Reaction<EREventDiscardAtChild>
     >;

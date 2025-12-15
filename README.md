@@ -24,7 +24,7 @@ FSM_STATE_MACHINE(Root, StateA) {
 };
 
 FSM_STATE(StateA, Root) {
-	using reactions = ufsm::mp::List<
+	using reactions = ufsm::List<
 		ufsm::Reaction<EvPing>,
 		ufsm::Reaction<EvToB>
 	>;

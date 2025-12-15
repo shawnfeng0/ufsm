@@ -20,7 +20,7 @@ struct StateABAA;
 FSM_STATE(StateAAA, StateAA, StateAAAA) { MARK_CLASS(StateAAA); };
 FSM_STATE(StateAAAA, StateAAA) {
   using reactions =
-      ufsm::mp::List<ufsm::Reaction<EventA>, ufsm::Reaction<EventB>>;
+  ufsm::List<ufsm::Reaction<EventA>, ufsm::Reaction<EventB>>;
   ufsm::Result React(const EventA& evt) {
     LOG << evt.Name() << " received in StateAAAA" << std::endl;
     Context<StateA>().state_a_context_string = "set-before-transit";
@@ -45,7 +45,7 @@ FSM_STATE(StateAAAA, StateAAA) {
 FSM_STATE(StateAB, StateA, StateABA) { MARK_CLASS(StateAB); };
 
 FSM_STATE(StateABA, StateAB, StateABAA) {
-  using reactions = ufsm::mp::List<ufsm::Reaction<EventB>>;
+  using reactions = ufsm::List<ufsm::Reaction<EventB>>;
   ufsm::Result React(const EventB&) {
     std::cout << "context(before): " << Context<StateA>().state_a_context_string
               << std::endl;

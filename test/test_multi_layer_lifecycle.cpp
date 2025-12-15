@@ -59,7 +59,7 @@ FSM_STATE(StateAAA, StateAA, StateAAAA) {
 };
 
 FSM_STATE(StateAAAA, StateAAA) {
-    using reactions = ufsm::mp::List<
+    using reactions = ufsm::List<
         ufsm::Reaction<EventGoToABAA>,
         ufsm::Reaction<EventGoToB>
     >;
@@ -84,7 +84,7 @@ FSM_STATE(StateAB, StateA, StateABA) {
 };
 
 FSM_STATE(StateABA, StateAB, StateABAA) {
-    using reactions = ufsm::mp::List<
+    using reactions = ufsm::List<
         ufsm::Reaction<EventGoBackToAAAA>
     >;
 
@@ -106,7 +106,7 @@ FSM_STATE(StateABAAA, StateABAA) {
 
 // StateB hierarchy
 FSM_STATE(StateB, MultiLayerMachine, StateBA) {
-    using reactions = ufsm::mp::List<
+    using reactions = ufsm::List<
         ufsm::Reaction<EventGoToC>
     >;
 
