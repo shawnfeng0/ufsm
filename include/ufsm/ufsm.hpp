@@ -25,10 +25,12 @@ namespace ufsm {
 namespace mp {
 
 // A type list container.
+// Example: List<int, float, char>
 template <typename... Types>
 struct List {};
 
 // Prepend a type to a list.
+// Example: PushFront<List<B, C>, A>::type -> List<A, B, C>
 template <typename ListType, typename Type>
 struct PushFront;
 
@@ -38,6 +40,7 @@ struct PushFront<List<Types...>, Type> {
 };
 
 // Append a type to a list.
+// Example: PushBack<List<A, B>, C>::type -> List<A, B, C>
 template <typename ListType, typename Type>
 struct PushBack;
 
@@ -47,6 +50,7 @@ struct PushBack<List<Types...>, Type> {
 };
 
 // Check if a type is in a list.
+// Example: Contains<List<A, B>, A>::value -> true
 template <typename ListType, typename Type>
 struct Contains : std::false_type {};
 
@@ -54,6 +58,7 @@ template <typename... Types, typename Type>
 struct Contains<List<Types...>, Type> : std::bool_constant<(std::is_same_v<Types, Type> || ...)> {};
 
 // Find the first type in a list satisfying a predicate.
+// Pred is a template class where Pred<T>::value is a boolean.
 template <typename ListType, template <typename> class Pred>
 struct FindIf {
   using type = void;
@@ -81,6 +86,7 @@ struct FindChildOf {
 };
 
 // Build a path of states from the head of ListType up to (but not including) StopType.
+// Used to determine the sequence of states to construct during a transition.
 template <typename ListType, typename StopType>
 struct BuildPath {
   using type = List<>;
@@ -123,6 +129,7 @@ class StateMachine;
 namespace detail {
 
 // Helper to get a pretty type name for debugging.
+// Extracts the type name from the compiler-specific function signature.
 template <typename T>
 constexpr std::string_view PrettyTypeName() {
 #if defined(__clang__)
@@ -143,6 +150,15 @@ constexpr std::string_view PrettyTypeName() {
   return "<type>";
 #endif
 }
+
+// RAII helper to restore a variable's value on scope exit.
+template <class T>
+struct RestoreOnExit {
+  T& slot;
+  T prev;
+  RestoreOnExit(T& s, T v) : slot(s), prev(std::exchange(s, v)) {}
+  ~RestoreOnExit() { slot = prev; }
+};
 
 // Base class for all events.
 class EventBase {
@@ -192,21 +208,23 @@ inline void InvokeOnUnhandledEventIfPresent(MachineType& machine, const EventBas
 }
 
 // Helper to construct a chain of states.
+// Recursively constructs states from Head to Tail.
 template <class ContextList, class OutermostContext>
 struct Constructor;
 
 template <typename Head, typename... Tail, class OutermostContext>
 struct Constructor<mp::List<Head, Tail...>, OutermostContext> {
   template <typename ContextPtr>
-  static void Construct(const ContextPtr& p, OutermostContext& out) {
+  static void Construct(const ContextPtr& context_ptr, OutermostContext& state_machine) {
     if constexpr (sizeof...(Tail) == 0)
-      Head::DeepConstruct(p, out);
+      Head::DeepConstruct(context_ptr, state_machine);
     else
-      Constructor<mp::List<Tail...>, OutermostContext>::Construct(Head::ShallowConstruct(p, out), out);
+      Constructor<mp::List<Tail...>, OutermostContext>::Construct(Head::ShallowConstruct(context_ptr, state_machine), state_machine);
   }
 };
 
 // Helper to build the context list for a transition.
+// Constructs the list of states that need to be entered to reach DestState from CurrentContext.
 template <class CurrentContext, class DestState>
 struct MakeContextList {
   using type = typename mp::PushBack<typename mp::BuildPath<typename DestState::ContextTypeList, CurrentContext>::type,
@@ -378,47 +396,54 @@ class State : public detail::StateBase {
  private:
   template <class DestState, class Action>
   [[nodiscard]] Result TransitImpl(Action&& action) {
-    // Find the common ancestor (Least Common Ancestor)
-    using CommonCtx = typename mp::FindFirstCommon<ContextTypeList, typename DestState::ContextTypeList>::type;
+    // Find the common ancestor (Least Common Ancestor) between the current state and the destination state.
+    using CommonAncestorType = typename mp::FindFirstCommon<ContextTypeList, typename DestState::ContextTypeList>::type;
+    
     // Find the child of the common ancestor that is on the path to the current state.
-    using TermState = typename mp::FindChildOf<typename mp::PushFront<ContextTypeList, Derived>::type, CommonCtx>::type;
+    // We need to terminate from this state downwards.
+    using StateToTerminateFromType = typename mp::FindChildOf<typename mp::PushFront<ContextTypeList, Derived>::type, CommonAncestorType>::type;
 
-    auto& term_state = Context<TermState>();
-    auto& common_ctx = term_state.template Context<CommonCtx>();
-    auto& out_base = common_ctx.OutermostContextBase();
+    auto& state_to_terminate_from = Context<StateToTerminateFromType>();
+    auto& common_ancestor = state_to_terminate_from.template Context<CommonAncestorType>();
+    auto& state_machine = common_ancestor.OutermostContextBase();
 
 #if !defined(NDEBUG)
-    UFSM_ASSERT(!out_base.in_transition_);
+    UFSM_ASSERT(!state_machine.in_transition_);
     struct UfsmTransitionGuard {
-      bool& f;
-      ~UfsmTransitionGuard() { f = false; }
-    } guard{out_base.in_transition_ = true};
+      bool& flag;
+      ~UfsmTransitionGuard() { flag = false; }
+    } guard{state_machine.in_transition_ = true};
 #endif
 
     // Terminate states down to the common ancestor.
-    out_base.TerminateImpl(term_state);
+    state_machine.TerminateImpl(state_to_terminate_from);
 
     // Execute transition action.
     if constexpr (!std::is_same_v<std::remove_reference_t<Action>, std::nullptr_t>) {
-      if constexpr (std::is_invocable_v<Action&&, CommonCtx&>)
-        std::forward<Action>(action)(common_ctx);
+      if constexpr (std::is_invocable_v<Action&&, CommonAncestorType&>)
+        std::forward<Action>(action)(common_ancestor);
       else
         std::forward<Action>(action)();
     }
 
-    // Construct the new state path.
-    detail::Constructor<typename detail::MakeContextList<CommonCtx, DestState>::type,
-                        OutermostContextBaseType>::Construct(&common_ctx, out_base);
+    // Construct the new state path from the common ancestor to the destination state.
+    detail::Constructor<typename detail::MakeContextList<CommonAncestorType, DestState>::type,
+                        OutermostContextBaseType>::Construct(&common_ancestor, state_machine);
 
     return Result::kConsumed;
   }
 
   template <typename... Reactions>
   Result LocalReact(const detail::EventBase& event, mp::List<Reactions...>) {
-    Result res = Result::kNoReaction;
-    // Fold expression to try reactions in order.
-    (void)((res = Reactions::React(*static_cast<Derived*>(this), event), res != Result::kNoReaction) || ...);
-    return res == Result::kNoReaction ? Result::kForwardEvent : res;
+    Result result = Result::kNoReaction;
+    // Try each reaction in the list.
+    // The fold expression uses the short-circuiting '||' operator.
+    // If a reaction returns something other than kNoReaction, the expression becomes true,
+    // and subsequent reactions are skipped.
+    (void)((result = Reactions::React(*static_cast<Derived*>(this), event),
+            result != Result::kNoReaction) ||
+           ...);
+    return result == Result::kNoReaction ? Result::kForwardEvent : result;
   }
 
   Result ReactImpl(const detail::EventBase& event) override {
@@ -440,14 +465,14 @@ class State : public detail::StateBase {
   }
 
   static InnerContextPtrType ShallowConstruct(const ContextPtrType& context, OutermostContextBaseType& out_context) {
-    std::unique_ptr<Derived> p;
+    std::unique_ptr<Derived> state;
     if constexpr (std::is_constructible_v<Derived, ContextPtrType>) {
-      p = std::make_unique<Derived>(context);
+      state = std::make_unique<Derived>(context);
     } else {
-      p = std::make_unique<Derived>();
-      p->context_ = context;
+      state = std::make_unique<Derived>();
+      state->context_ = context;
     }
-    return out_context.Add(std::move(p));
+    return out_context.Add(std::move(state));
   }
 
   ContextPtrType context_;
@@ -482,6 +507,8 @@ class StateMachine {
   bool Terminated() const noexcept { return !current_state_; }
 
   // Process an event.
+  // This method handles the event loop, ensuring that posted events are processed
+  // after the current event is handled. It also handles re-entrant calls.
   template <class Ev>
   Result ProcessEvent(const Ev& event) {
     return ProcessEventLoop(event);
@@ -523,13 +550,6 @@ class StateMachine {
  private:
   template <typename, typename, typename>
   friend class ufsm::State;
-  template <class T>
-  struct RestoreOnExit {
-    T& slot;
-    T prev;
-    RestoreOnExit(T& s, T v) : slot(s), prev(std::exchange(s, v)) {}
-    ~RestoreOnExit() { slot = prev; }
-  };
 
 #if !defined(NDEBUG)
   bool in_transition_ = false;
@@ -538,33 +558,44 @@ class StateMachine {
   Result ReactImpl(const detail::EventBase&) { return Result::kForwardEvent; }
 
   template <class StateType>
-  StateType* Add(std::unique_ptr<StateType> p_state) {
-    p_state->SetActiveIndex(active_path_.size());
-    StateType* raw = p_state.get();
-    active_path_.push_back(std::move(p_state));
-    if constexpr (std::is_same_v<typename StateType::InnerInitialType, void>) current_state_ = raw;
-    return raw;
+  StateType* Add(std::unique_ptr<StateType> state_ptr) {
+    state_ptr->SetActiveIndex(active_path_.size());
+    StateType* raw_ptr = state_ptr.get();
+    active_path_.push_back(std::move(state_ptr));
+    if constexpr (std::is_same_v<typename StateType::InnerInitialType, void>) current_state_ = raw_ptr;
+    return raw_ptr;
   }
 
   Result ProcessEventLoop(const detail::EventBase& event) {
 #if !defined(NDEBUG)
     UFSM_ASSERT(!in_transition_);
 #endif
+    // If we are already in the event loop (re-entrant call), just process the event immediately.
     if (in_event_loop_) return ProcessEventImpl(event);
-    RestoreOnExit<bool> guard(in_event_loop_, true);
+
+    // Otherwise, mark that we are in the event loop.
+    detail::RestoreOnExit<bool> guard(in_event_loop_, true);
     Result last = ProcessEventImpl(event);
+
     // Process posted events after the current event.
+    // This queue may grow as events are processed.
     for (; !posted_events_.empty(); posted_events_.pop_front()) last = ProcessEventImpl(*posted_events_.front());
     return last;
   }
 
   Result ProcessEventImpl(const detail::EventBase& event) {
-    RestoreOnExit<const detail::EventBase*> guard(current_event_, &event);
+    detail::RestoreOnExit<const detail::EventBase*> guard(current_event_, &event);
+
+    // Delegate reaction to the current state.
     auto res = current_state_ ? current_state_->ReactImpl(event) : Result::kForwardEvent;
+
+    // Handle deferral.
     if (res == Result::kDeferEvent) {
       deferred_events_.push_back(event.Clone());
       return Result::kConsumed;
     }
+
+    // Handle unhandled events.
     if (res == Result::kForwardEvent) detail::InvokeOnUnhandledEventIfPresent(*static_cast<Derived*>(this), event);
     return res;
   }
@@ -587,6 +618,8 @@ class StateMachine {
     }
     auto idx = state.ActiveIndex();
     UFSM_ASSERT(idx < active_path_.size() && active_path_[idx].get() == &state);
+    // Reset the state machine to the depth of the state being terminated.
+    // This effectively exits all states deeper than 'state'.
     ResetToDepth(idx < active_path_.size() && active_path_[idx].get() == &state ? idx : 0);
   }
 
