@@ -263,7 +263,9 @@ struct MakeContextList {
 template <typename Derived>
 class Event : public detail::EventBase {
  public:
-  Event() noexcept : detail::EventBase(StaticTypeId()) {}
+  Event() noexcept : detail::EventBase(StaticTypeId()) {
+    static_assert(std::is_base_of_v<Event, Derived>, "Derived event must inherit from ufsm::Event<Derived>");
+  }
   const char* Name() const noexcept override {
     static const std::string name{detail::PrettyTypeName<Derived>()};
     return name.c_str();
@@ -288,6 +290,8 @@ class Event : public detail::EventBase {
 // Reaction to a specific event type.
 template <class EventType>
 class Reaction {
+  static_assert(std::is_base_of_v<detail::EventBase, EventType>, "EventType must be derived from ufsm::Event");
+
  public:
   template <typename StateType, typename EventBaseType>
   static Result React(StateType& state, const EventBaseType& event) {
@@ -306,6 +310,9 @@ class Reaction {
 // Transition to a destination state upon a specific event.
 template <class EventType, class DestState, class Action = std::nullptr_t>
 class Transition {
+  static_assert(std::is_base_of_v<detail::EventBase, EventType>, "EventType must be derived from ufsm::Event");
+  static_assert(std::is_base_of_v<detail::StateBase, DestState>, "DestState must be derived from ufsm::State");
+
  public:
   template <typename StateType, typename EventBaseType>
   static Result React(StateType& state, const EventBaseType& event) {
@@ -322,6 +329,9 @@ class Transition {
 // Deferral of a specific event type.
 template <class EventType>
 class Deferral {
+  static_assert(std::is_base_of_v<detail::EventBase, EventType> || std::is_same_v<EventType, detail::EventBase>,
+                "EventType must be derived from ufsm::Event");
+
  public:
   template <typename StateType, typename EventBaseType>
   static Result React(StateType& state, const EventBaseType& event) {
@@ -340,6 +350,8 @@ class Deferral {
 // InnerInitial: The initial substate (if any).
 template <typename Derived, typename ContextState, typename InnerInitial = void>
 class State : public detail::StateBase {
+  static_assert(std::is_class_v<ContextState>, "ContextState must be a class (State or StateMachine)");
+
  public:
   using InnerInitialType = InnerInitial;
   using reactions = mp::List<>;
@@ -517,6 +529,9 @@ class State : public detail::StateBase {
   friend struct ufsm::detail::Constructor;
 
   static void DeepConstruct(const ContextPtrType& context, OutermostContextBaseType& out_context) {
+    static_assert(std::is_base_of_v<State, Derived>, "Derived state must inherit from ufsm::State<Derived, ...>");
+    static_assert(std::is_void_v<InnerInitial> || std::is_base_of_v<detail::StateBase, InnerInitial>,
+                  "InnerInitial must be a State or void");
     auto* p_inner = ShallowConstruct(context, out_context);
     if constexpr (!std::is_same_v<void, InnerInitial>) InnerInitial::DeepConstruct(p_inner, out_context);
   }
@@ -549,6 +564,9 @@ class StateMachine {
 
   // Start the state machine.
   void Initiate() {
+    static_assert(std::is_base_of_v<StateMachine, Derived>,
+                  "Derived machine must inherit from ufsm::StateMachine<Derived, ...>");
+    static_assert(std::is_base_of_v<detail::StateBase, InnerInitial>, "InnerInitial must be a State");
     TerminateImpl();
     InnerInitial::DeepConstruct(static_cast<Derived*>(this), *static_cast<Derived*>(this));
   }
