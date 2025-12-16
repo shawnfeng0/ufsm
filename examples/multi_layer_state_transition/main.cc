@@ -18,7 +18,7 @@ int main(int /*argc*/, char* /*argv*/[]) {
   machine.ProcessEvent(EventC{});
   machine.ProcessEvent(EventD{});
 
-  std::cout << std::endl;
+  std::cout << "Before reinit" << std::endl;
   machine.Initiate();
   machine.Terminate();
 

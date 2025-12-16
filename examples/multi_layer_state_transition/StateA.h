@@ -11,16 +11,15 @@
 
 FSM_STATE(StateA, Machine, StateAA) {
   std::string state_a_context_string;
-  MARK_CLASS(StateA);
+  explicit StateA(ContextPtrType ctx) : State(ctx) {}
 };
 
 FSM_STATE(StateAA, StateA, StateAAA) {
  public:
-  template <typename Ctx>
-  explicit StateAA(Ctx& context) : State(&context) {
+  explicit StateAA(ContextPtrType ctx) : State(ctx) {
     MARK_FUNCTION;
-    context.state_a_context_string = "modified_in_StateAA_ctor_template";
-    std::cout << "StateAA constructed with context modification (template): " << context.state_a_context_string << std::endl;
+    ctx->state_a_context_string = "modified_in_StateAA_ctor_ptr";
+    std::cout << "StateAA constructed with context modification (ptr): " << ctx->state_a_context_string << std::endl;
   }
   ~StateAA() { MARK_FUNCTION; }
 };
@@ -28,8 +27,7 @@ FSM_STATE(StateAA, StateA, StateAAA) {
 struct StateABAA;
 FSM_STATE(StateAAA, StateAA, StateAAAA) { MARK_CLASS(StateAAA); };
 FSM_STATE(StateAAAA, StateAAA) {
-  using reactions =
-  ufsm::List<ufsm::Reaction<EventA>, ufsm::Reaction<EventB>>;
+  using reactions = ufsm::List<ufsm::Reaction<EventA>, ufsm::Reaction<EventB>>;
   ufsm::Result React(const EventA& evt) {
     LOG << evt.Name() << " received in StateAAAA" << std::endl;
     Context<StateA>().state_a_context_string = "set-before-transit";
@@ -56,8 +54,7 @@ FSM_STATE(StateAB, StateA, StateABA) { MARK_CLASS(StateAB); };
 FSM_STATE(StateABA, StateAB, StateABAA) {
   using reactions = ufsm::List<ufsm::Reaction<EventB>>;
   ufsm::Result React(const EventB&) {
-    std::cout << "context(before): " << Context<StateA>().state_a_context_string
-              << std::endl;
+    std::cout << "context(before): " << Context<StateA>().state_a_context_string << std::endl;
     MARK_FUNCTION;
     // No-arg action is also supported.
     StateA* p_state_a = &Context<StateA>();

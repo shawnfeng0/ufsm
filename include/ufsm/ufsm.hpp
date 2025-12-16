@@ -205,7 +205,7 @@ public:
     }
     static const void* StaticTypeId() noexcept { static const int tag = 0; return &tag; }
 protected:
-    State(ContextType* context = nullptr) : p_context_(context) {}
+    State(ContextPtrType context = nullptr) : p_context_(context) {}
     ~State() {
         if (p_context_ && deferred_flag_) {
             auto& out = p_context_->OutermostContextBase();
@@ -252,8 +252,8 @@ private:
     }
     static InnerContextPtrType ShallowConstruct(const ContextPtrType& p_context, OutermostContextBaseType& out_context) {
         std::unique_ptr<Derived> p;
-        if constexpr (std::is_constructible_v<Derived, ContextType&>) {
-            p = std::make_unique<Derived>(*p_context);
+        if constexpr (std::is_constructible_v<Derived, ContextPtrType>) {
+            p = std::make_unique<Derived>(p_context);
         } else {
             p = std::make_unique<Derived>();
             p->p_context_ = p_context;
@@ -269,7 +269,7 @@ public:
     using InnerContextType = Derived;
     using OutermostContextType = Derived;
     using OutermostContextBaseType = StateMachine;
-    using InnerContextPtrType = StateMachine*;
+    using InnerContextPtrType = Derived*;
     using ContextTypeList = mp::List<>;
     using ContextType = void;
 
@@ -298,7 +298,7 @@ public:
     const StateMachine& OutermostContextBase() const { return *this; }
     StateMachine& OutermostContextBase() { return *this; }
 protected:
-    StateMachine() = default;
+    StateMachine() { active_path_.reserve(8); }
     virtual ~StateMachine() { TerminateImpl(); }
 private:
     template <typename, typename, typename> friend class ufsm::State;
@@ -346,7 +346,8 @@ private:
     detail::StateBase* current_state_ = nullptr;
     std::vector<std::unique_ptr<detail::StateBase>> active_path_;
     const detail::EventBase* current_event_ = nullptr;
-    std::deque<detail::EventBase::Ptr> deferred_events_, posted_events_;
+    std::vector<detail::EventBase::Ptr> deferred_events_;
+    std::deque<detail::EventBase::Ptr> posted_events_;
     bool ufsm_in_event_loop_ = false;
 };
 } // namespace ufsm
