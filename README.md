@@ -1,73 +1,151 @@
-# ufsm
-Ported from boost::statechart.
+# ufsm - Ultra-lightweight Finite State Machine
 
-The basic hierarchical state transition function has been stably available.
-Please refer to the examples in [examples](examples) and boost::statechart for usage. The documentation is being improved...
+[ufsm](https://github.com/shawnfeng0/ufsm) is a modern, header-only C++17 hierarchical finite state machine (HFSM) library. It is inspired by `boost::statechart` but designed to be lightweight, RTTI-free, and easy to integrate.
+
+## Key Features
+
+*   **Header-only**: No build steps required, just include `<ufsm/ufsm.hpp>`.
+*   **Hierarchical**: Supports nested states (composite states) with automatic drill-down and drill-up behavior.
+*   **Type-Safe**: Heavily relies on C++ templates and CRTP for compile-time checks.
+*   **Efficient Memory Model**: States are managed via `std::unique_ptr` with no shared pointer overhead.
+*   **Event Deferral**: Built-in support for deferring events to be processed later.
+*   **Flexible Transitions**: Supports sibling transitions, hierarchical transitions, and custom actions/guards.
+
+## Integration
+
+Since `ufsm` is header-only, you only need to add the `include` directory to your project's include path.
+
+```cmake
+target_include_directories(my_target PRIVATE path/to/ufsm/include)
+```
 
 ## Quick Start
 
+Here is a simple example of a robot controller state machine.
+
 ```cpp
+#include <iostream>
 #include <ufsm/ufsm.hpp>
 
-// 1) Define events
-FSM_EVENT(EvPing) {};
-FSM_EVENT(EvToB) {};
+// 1. Define Events
+struct EvStart : ufsm::Event<EvStart> {};
+struct EvStop : ufsm::Event<EvStop> {};
 
-// Forward declarations (macros expand to `struct ...`)
-struct Root;
-struct StateA;
-struct StateB;
+// 2. Forward Declare States
+struct Robot; // The Machine
+struct Idle;  // Initial State
+struct Running;
 
-// 2) Define the state machine and states
-FSM_STATE_MACHINE(Root, StateA) {
-	int pings = 0;
+// 3. Define State Machine
+struct Robot : ufsm::StateMachine<Robot, Idle> {
+    // Shared context data
+    int battery = 100;
+
+    void OnUnhandledEvent(const ufsm::detail::EventBase& e) {
+        std::cout << "Unhandled event: " << e.Name() << "\n";
+    }
 };
 
-FSM_STATE(StateA, Root) {
-	using reactions = ufsm::List<
-		ufsm::Reaction<EvPing>,
-		ufsm::Reaction<EvToB>
-	>;
+// 4. Define States
+struct Idle : ufsm::State<Idle, Robot> {
+    Idle() { std::cout << "Entering Idle\n"; }
 
-	ufsm::Result React(const EvPing&) {
-		OutermostContext().pings++;
-		return consume_event();
-	}
-
-	ufsm::Result React(const EvToB&) {
-		return Transit<StateB>();
-	}
+    using reactions = ufsm::List<
+        ufsm::Transition<EvStart, Running>
+    >;
 };
 
-FSM_STATE(StateB, Root) {
-	// No reactions => will forward to parent (Root), which forwards by default.
+struct Running : ufsm::State<Running, Robot> {
+    Running() { std::cout << "Entering Running\n"; }
+
+    // Custom reaction with guard logic
+    ufsm::Result React(const EvStop&) {
+        std::cout << "Stopping...\n";
+        return Transit<Idle>();
+    }
+
+    using reactions = ufsm::List<
+        ufsm::Reaction<EvStop>
+    >;
 };
 
 int main() {
-	Root machine;
-	machine.Initiate();
-	machine.ProcessEvent(EvPing{});
-	machine.ProcessEvent(EvToB{});
-	machine.Terminate();
-	return 0;
+    Robot robot;
+    robot.Initiate();           // Enter Idle
+    robot.ProcessEvent(EvStart{}); // Idle -> Running
+    robot.ProcessEvent(EvStop{});  // Running -> Idle
+    return 0;
 }
 ```
 
-## Current ownership model (no shared_ptr)
+## Advanced Usage
 
-`ufsm` is a header-only hierarchical state machine.
+### Hierarchical States (Composite States)
 
-The state machine centrally owns the active state chain (outermost → innermost) using `std::unique_ptr`.
-States store a raw pointer to their parent context; parents do not own children.
+States can have children. When entering a parent state, the initial child state is automatically entered (Drill-down).
 
-Practical implications:
+```cpp
+// Active has 'Moving' as its initial substate
+struct Moving;
+struct Active : ufsm::State<Active, Robot, Moving> { ... };
 
-- You can take a non-owning pointer view via `&Context<T>()`.
-- The pointer is valid only while the corresponding state is active.
-- Do not cache the pointer across transitions or after `Terminate()`.
+// Moving is a child of Active
+struct Moving : ufsm::State<Moving, Active> { ... };
+```
 
-This design avoids reference-counting overhead and makes state lifetime explicit and deterministic.
+### Transitions
 
-## Limitations
+*   **Sibling**: `Transit<SiblingState>()`
+*   **Drill-down**: `Transit<ChildState>()` (Parent remains active)
+*   **Drill-up**: `Transit<ParentState>()` (Exits current state and re-enters Parent)
+*   **Cross-hierarchy**: `Transit<OtherBranchState>()` (Exits up to LCA, then enters down)
 
-- Events are identified by a per-binary internal type tag (RTTI-free). Cross-DSO/plugin event dispatch is not supported.
+### Actions and Guards
+
+You can attach actions to transitions or use `React` for complex logic.
+
+```cpp
+// Transition with Action
+struct MyAction {
+    void operator()() { std::cout << "Transitioning!\n"; }
+};
+using reactions = ufsm::List<
+    ufsm::Transition<EvGo, DestState, MyAction>
+>;
+
+// Manual React with Guard
+ufsm::Result React(const EvCheck& e) {
+    if (Context<Robot>().battery > 10) {
+        return Transit<DestState>();
+    }
+    return DiscardEvent();
+}
+```
+
+### Event Deferral
+
+Events can be deferred to be processed later (e.g., after a state change).
+
+```cpp
+using reactions = ufsm::List<
+    ufsm::Deferral<EvBusy> // Defer EvBusy while in this state
+>;
+```
+
+## Ownership Model
+
+`ufsm` uses a strict ownership model to ensure deterministic destruction:
+
+*   The **StateMachine** owns the active state path via `std::unique_ptr`.
+*   **States** hold a raw pointer to their context (parent/machine).
+*   **Events** are polymorphic and are cloned (stored by value) when posted to the queue.
+
+## Examples
+
+Check the `examples/` directory for more comprehensive usage:
+*   `examples/comprehensive_demo`: A full robot controller demo showcasing all features.
+*   `examples/connector`: A connection manager example.
+
+## License
+
+See [LICENSE](LICENSE) file.
