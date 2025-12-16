@@ -44,6 +44,6 @@ private:
 inline void ExpectSeq(const std::vector<std::string>& actual, const std::vector<std::string>& expected) {
     ASSERT_EQ(actual.size(), expected.size());
     for (size_t i = 0; i < expected.size(); ++i) {
-        EXPECT_EQ(actual[i], expected[i]);
+        ASSERT_EQ(actual[i], expected[i]);
     }
 }

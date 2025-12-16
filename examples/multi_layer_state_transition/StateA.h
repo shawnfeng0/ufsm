@@ -14,7 +14,16 @@ FSM_STATE(StateA, Machine, StateAA) {
   MARK_CLASS(StateA);
 };
 
-FSM_STATE(StateAA, StateA, StateAAA) { MARK_CLASS(StateAA); };
+FSM_STATE(StateAA, StateA, StateAAA) {
+ public:
+  template <typename Ctx>
+  explicit StateAA(Ctx& context) : State(&context) {
+    MARK_FUNCTION;
+    context.state_a_context_string = "modified_in_StateAA_ctor_template";
+    std::cout << "StateAA constructed with context modification (template): " << context.state_a_context_string << std::endl;
+  }
+  ~StateAA() { MARK_FUNCTION; }
+};
 
 struct StateABAA;
 FSM_STATE(StateAAA, StateAA, StateAAAA) { MARK_CLASS(StateAAA); };

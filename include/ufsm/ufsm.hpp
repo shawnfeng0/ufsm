@@ -19,14 +19,11 @@ namespace ufsm {
 namespace mp {
 template <typename... Types> struct List {};
 template <typename ListType, typename Type> struct PushFront;
-template <typename... Types, typename Type>
-struct PushFront<List<Types...>, Type> { using type = List<Type, Types...>; };
+template <typename... Types, typename Type> struct PushFront<List<Types...>, Type> { using type = List<Type, Types...>; };
 template <typename ListType, typename Type> struct PushBack;
-template <typename... Types, typename Type>
-struct PushBack<List<Types...>, Type> { using type = List<Types..., Type>; };
+template <typename... Types, typename Type> struct PushBack<List<Types...>, Type> { using type = List<Types..., Type>; };
 template <typename ListType, typename Type> struct Contains : std::false_type {};
-template <typename... Types, typename Type>
-struct Contains<List<Types...>, Type> : std::bool_constant<(std::is_same_v<Types, Type> || ...)> {};
+template <typename... Types, typename Type> struct Contains<List<Types...>, Type> : std::bool_constant<(std::is_same_v<Types, Type> || ...)> {};
 template <typename ListType, template <typename> class Pred> struct FindIf { using type = void; };
 template <typename Head, typename... Tail, template <typename> class Pred>
 struct FindIf<List<Head, Tail...>, Pred> { using type = std::conditional_t<Pred<Head>::value, Head, typename FindIf<List<Tail...>, Pred>::type>; };
@@ -38,587 +35,285 @@ template <typename ListType, typename StopType> struct BuildPath { using type = 
 template <typename Head, typename... Tail, typename StopType>
 struct BuildPath<List<Head, Tail...>, StopType> { using type = std::conditional_t<std::is_same_v<Head, StopType>, List<>, typename PushBack<typename BuildPath<List<Tail...>, StopType>::type, Head>::type>; };
 } // namespace mp
-// User-facing alias for reaction lists.
 template <typename... Types>
 using List = mp::List<Types...>;
-enum class Result {
-    kNoReaction,   // Event not handled
-    kForwardEvent, // Forward event to parent state
-    kDiscardEvent, // Discard event (actively ignored)
-    kDeferEvent,   // Defer the currently handled event
-    kConsumed      // Event consumed (handled)
-};
-template <class EventType>
-class Reaction;
-template <class EventType, class DestState, class Action>
-class Transition;
-template <class EventType>
-class Deferral;
-// Forward declarations for friend relationships between framework internals.
-template <typename Derived, typename InnerInitial>
-class StateMachine;
+enum class Result { kNoReaction, kForwardEvent, kDiscardEvent, kDeferEvent, kConsumed };
+template <class EventType> class Reaction;
+template <class EventType, class DestState, class Action> class Transition;
+template <class EventType> class Deferral;
+template <typename Derived, typename InnerInitial> class StateMachine;
 namespace detail {
-// Best-effort type name extraction for diagnostics/logging (not a stable ID).
 template <typename T>
 constexpr std::string_view PrettyTypeName() {
 #if defined(__clang__)
-    std::string_view p = __PRETTY_FUNCTION__;
-    const auto start = p.find("T = ");
-    const auto end = p.rfind(']');
-    if (start == std::string_view::npos || end == std::string_view::npos || end <= start + 4) return p;
-    return p.substr(start + 4, end - (start + 4));
+    std::string_view p = __PRETTY_FUNCTION__, s = "T = ";
+    auto start = p.find(s), end = p.rfind(']');
+    return (start != std::string_view::npos && end > start + 4) ? p.substr(start + 4, end - start - 4) : p;
 #elif defined(__GNUC__)
-    std::string_view p = __PRETTY_FUNCTION__;
-    const auto start = p.find("T = ");
-    if (start == std::string_view::npos) return p;
-    const auto end = p.find(';', start);
-    if (end == std::string_view::npos || end <= start + 4) return p;
-    return p.substr(start + 4, end - (start + 4));
+    std::string_view p = __PRETTY_FUNCTION__, s = "T = ";
+    auto start = p.find(s), end = p.find(';', start);
+    return (start != std::string_view::npos && end > start + 4) ? p.substr(start + 4, end - start - 4) : p;
 #elif defined(_MSC_VER)
-    std::string_view p = __FUNCSIG__;
-    const auto start = p.find("PrettyTypeName<");
+    std::string_view p = __FUNCSIG__, s = "PrettyTypeName<";
+    auto start = p.find(s);
     if (start == std::string_view::npos) return p;
-    const auto inner = p.substr(start + std::string_view("PrettyTypeName<").size());
-    const auto end = inner.find(">(");
-    if (end == std::string_view::npos) return p;
-    return inner.substr(0, end);
+    auto inner = p.substr(start + s.size()), end = inner.find(">(");
+    return end != std::string_view::npos ? inner.substr(0, end) : p;
 #else
-    return std::string_view{"<type>"};
+    return "<type>";
 #endif
 }
-template <typename T>
-inline const char* PrettyTypeNameCStr() {
-    static const std::string s{PrettyTypeName<T>()};
-    return s.c_str();
-}
-template <typename T>
-struct IsMpList : std::false_type {};
-template <typename... Ts>
-struct IsMpList<mp::List<Ts...>> : std::true_type {};
-template <typename T>
-struct IsReaction : std::false_type {};
-template <typename EventType>
-struct IsReaction<Reaction<EventType>> : std::true_type {};
-template <typename T>
-struct IsTransition : std::false_type {};
-template <typename T>
-struct IsDeferral : std::false_type {};
-template <typename ListType>
-struct AllAreReactionEntries;
-
-template <typename... Ts>
-struct AllAreReactionEntries<mp::List<Ts...>>
-    : std::bool_constant<((IsReaction<Ts>::value || IsTransition<Ts>::value || IsDeferral<Ts>::value) && ...)> {};
-
-template <typename StateType, typename EventType, typename = void>
-struct HasReactMethod : std::false_type {};
-template <typename StateType, typename EventType>
-struct HasReactMethod<StateType, EventType,
-                      std::void_t<decltype(std::declval<StateType&>().React(std::declval<const EventType&>()))>> : std::true_type {};
-
-template <typename StateType, typename EventType, typename = void>
-struct ReactReturnType { using type = void; };
-template <typename StateType, typename EventType>
-struct ReactReturnType<StateType,
-                       EventType,
-                       std::void_t<decltype(std::declval<StateType&>().React(std::declval<const EventType&>()))>> {
-    using type = decltype(std::declval<StateType&>().React(std::declval<const EventType&>()));
-};
-
 class EventBase {
 public:
     using Ptr = std::unique_ptr<EventBase>;
     virtual ~EventBase() = default;
-    // Type identity for event dispatch (not stable across DSOs/plugins).
     const void* TypeId() const noexcept { return type_id_; }
-    // Human-readable name for diagnostics/logging.
     virtual const char* Name() const noexcept { return "<ufsm::event>"; }
-    // Polymorphic copy used by deferral/posted queues.
     virtual Ptr Clone() const = 0;
-
 protected:
     constexpr explicit EventBase(const void* type_id) noexcept : type_id_(type_id) {}
-
 private:
     const void* type_id_;
 };
-
-// Base class for all states, providing common interface.
-// Ownership is handled by the outermost state machine (see StateMachine).
 class StateBase {
 public:
     virtual Result ReactImpl(const EventBase& event) = 0;
-    // RTTI-free identity and name for diagnostics and queries.
     virtual const void* TypeId() const noexcept = 0;
     virtual const char* Name() const noexcept { return "<ufsm::state>"; }
     virtual ~StateBase() = default;
-
-protected:
-    StateBase() = default;
-
-private:
-    template <typename, typename>
-    friend class ::ufsm::StateMachine;
-
     std::size_t ActiveIndex() const noexcept { return active_index_; }
     void SetActiveIndex(std::size_t index) noexcept { active_index_ = index; }
-
+protected:
+    StateBase() = default;
+private:
     std::size_t active_index_ = 0;
 };
+template <typename MachineType, typename = void> struct HasOnUnhandledEventMethod : std::false_type {};
+template <typename MachineType>
+struct HasOnUnhandledEventMethod<MachineType, std::void_t<decltype(std::declval<MachineType&>().OnUnhandledEvent(std::declval<const EventBase&>()))>> : std::true_type {};
+template <typename MachineType>
+inline void InvokeOnUnhandledEventIfPresent(MachineType& machine, const EventBase& event) {
+    if constexpr (HasOnUnhandledEventMethod<MachineType>::value) machine.OnUnhandledEvent(event);
+}
+template <class ContextList, class OutermostContext> struct Constructor;
+template <typename Head, typename... Tail, class OutermostContext>
+struct Constructor<mp::List<Head, Tail...>, OutermostContext> {
+    template <typename ContextPtr>
+    static void Construct(const ContextPtr& p, OutermostContext& out) {
+        if constexpr (sizeof...(Tail) == 0) Head::DeepConstruct(p, out);
+        else Constructor<mp::List<Tail...>, OutermostContext>::Construct(Head::ShallowConstruct(p, out), out);
+    }
+};
+template <class CurrentContext, class DestState>
+struct MakeContextList {
+    using type = typename mp::PushBack<typename mp::BuildPath<typename DestState::ContextTypeList, CurrentContext>::type, DestState>::type;
+};
 } // namespace detail
-
 template <typename Derived>
 class Event : public detail::EventBase {
 public:
     Event() noexcept : detail::EventBase(StaticTypeId()) {}
-
-    const char* Name() const noexcept override { return detail::PrettyTypeNameCStr<Derived>(); }
-
-    detail::EventBase::Ptr Clone() const override {
-        static_assert(std::is_copy_constructible_v<Derived>,
-                      "Events must be copy constructible to be deferred as ufsm::detail::EventBase.");
-        return detail::EventBase::Ptr(new Derived(static_cast<const Derived&>(*this)));
+    const char* Name() const noexcept override {
+        static const std::string name{detail::PrettyTypeName<Derived>()};
+        return name.c_str();
     }
-
+    detail::EventBase::Ptr Clone() const override { return detail::EventBase::Ptr(new Derived(static_cast<const Derived&>(*this))); }
 private:
-    template <class>
-    friend class ::ufsm::Reaction;
-    template <class, class, class>
-    friend class ::ufsm::Transition;
-    template <class>
-    friend class ::ufsm::Deferral;
-
-    static const void* StaticTypeId() noexcept {
-        static const int tag = 0;
-        return &tag;
-    }
+    template <class> friend class ::ufsm::Reaction;
+    template <class, class, class> friend class ::ufsm::Transition;
+    template <class> friend class ::ufsm::Deferral;
+    static const void* StaticTypeId() noexcept { static const int tag = 0; return &tag; }
 };
-// Event reaction wrapper: dispatches an event to State::React(const EventType&).
 template <class EventType>
 class Reaction {
 public:
     template <typename StateType, typename EventBaseType>
     static Result React(StateType& state, const EventBaseType& event) {
-        static_assert(std::is_base_of_v<detail::EventBase, EventType>,
-                      "EventType must derive from ufsm::Event<EventType> (i.e., from ufsm::detail::EventBase).");
-        static_assert(detail::HasReactMethod<StateType, EventType>::value,
-                      "StateType must implement React(const EventType&) (returning void or ufsm::Result).");
-        using ReturnT = typename detail::ReactReturnType<StateType, EventType>::type;
-        static_assert(std::is_void_v<ReturnT> || std::is_same_v<ReturnT, ufsm::Result>,
-                      "React(const EventType&) must return void or ufsm::Result.");
-
         if (event.TypeId() == EventType::StaticTypeId()) {
-            const auto& casted_event = static_cast<const EventType&>(event);
-            if constexpr (std::is_void_v<ReturnT>) {
-                state.React(casted_event);
-                return Result::kConsumed;
-            } else {
-                return state.React(casted_event);
-            }
+            using ReturnT = decltype(state.React(static_cast<const EventType&>(event)));
+            if constexpr (std::is_void_v<ReturnT>) { state.React(static_cast<const EventType&>(event)); return Result::kConsumed; }
+            else return state.React(static_cast<const EventType&>(event));
         }
         return Result::kNoReaction;
     }
 };
-
-// Declarative transition entry (optional Action is default-constructed).
 template <class EventType, class DestState, class Action = std::nullptr_t>
 class Transition {
 public:
     template <typename StateType, typename EventBaseType>
     static Result React(StateType& state, const EventBaseType& event) {
-        static_assert(std::is_base_of_v<detail::EventBase, EventType>,
-                      "EventType must derive from ufsm::Event<EventType> (i.e., from ufsm::detail::EventBase).");
-
         if (event.TypeId() == EventType::StaticTypeId()) {
-            (void)static_cast<const EventType&>(event);
             if constexpr (std::is_same_v<Action, std::nullptr_t>) return state.template Transit<DestState>();
-            static_assert(std::is_default_constructible_v<Action>,
-                          "ufsm::Transition<...> with Action requires Action to be default constructible.");
-            return state.template Transit<DestState>(Action{});
+            else return state.template Transit<DestState>(Action{});
         }
         return Result::kNoReaction;
     }
 };
-
-// Optional Boost-like alias name (lowercase) for readability.
-template <class EventType, class DestState, class Action = std::nullptr_t>
-using transition = Transition<EventType, DestState, Action>;
-
-// Defers an event (Boost.Statechart-like).
+template <class EventType, class DestState, class Action = std::nullptr_t> using transition = Transition<EventType, DestState, Action>;
 template <class EventType>
 class Deferral {
 public:
     template <typename StateType, typename EventBaseType>
     static Result React(StateType& state, const EventBaseType& event) {
-        static_assert(std::is_base_of_v<detail::EventBase, EventType>,
-                      "EventType must derive from ufsm::Event<EventType> (i.e., from ufsm::detail::EventBase).");
-
-        if constexpr (std::is_same_v<EventType, detail::EventBase>) return state.defer_event();
-        if (event.TypeId() == EventType::StaticTypeId()) return state.defer_event();
+        if constexpr (std::is_same_v<EventType, detail::EventBase>) {
+            return state.defer_event();
+        } else {
+            if (event.TypeId() == EventType::StaticTypeId()) return state.defer_event();
+        }
         return Result::kNoReaction;
     }
 };
-
-template <class EventType>
-using deferral = Deferral<EventType>;
-
-namespace detail {
-template <typename MachineType, typename = void>
-struct HasOnUnhandledEventMethod : std::false_type {};
-template <typename MachineType>
-struct HasOnUnhandledEventMethod<MachineType,
-                                 std::void_t<decltype(std::declval<MachineType&>().OnUnhandledEvent(std::declval<const EventBase&>()))>> : std::true_type {};
-
-template <typename MachineType>
-inline void InvokeOnUnhandledEventIfPresent(MachineType& machine, const EventBase& event) {
-    if constexpr (HasOnUnhandledEventMethod<MachineType>::value) machine.OnUnhandledEvent(event);
-    else { (void)machine; (void)event; }
-}
-
-template <typename EventType, typename DestState, typename Action>
-struct IsTransition<Transition<EventType, DestState, Action>> : std::true_type {};
-
-template <typename EventType>
-struct IsDeferral<Deferral<EventType>> : std::true_type {};
-
-// State constructor: recursively construct state hierarchy.
-template <class ContextList, class OutermostContext>
-struct Constructor;
-
-template <typename Head, typename... Tail, class OutermostContext>
-struct Constructor<mp::List<Head, Tail...>, OutermostContext> {
-    template <typename ContextPtr>
-    static void Construct(const ContextPtr& p_context, OutermostContext& out_context) {
-        if constexpr (sizeof...(Tail) == 0) {
-            Head::DeepConstruct(p_context, out_context);
-        } else {
-            auto p = Head::ShallowConstruct(p_context, out_context);
-            Constructor<mp::List<Tail...>, OutermostContext>::Construct(p, out_context);
-        }
-    }
-};
-
-template <class CurrentContext, class DestState>
-struct MakeContextList {
-    using type = typename mp::PushBack<typename mp::BuildPath<typename DestState::ContextTypeList, CurrentContext>::type, DestState>::type;
-};
-
-} // namespace detail
-
-// State (CRTP): Derived, ContextState, InnerInitial (void => leaf).
+template <class EventType> using deferral = Deferral<EventType>;
 template <typename Derived, typename ContextState, typename InnerInitial = void>
 class State : public detail::StateBase {
 public:
     using InnerInitialType = InnerInitial;
-    using reactions = mp::List<>;                                           // Reaction list (overridden by derived)
-    using ContextType = typename ContextState::InnerContextType;            // Parent state type
-    using ContextPtrType = typename ContextType::InnerContextPtrType;       // Parent context pointer type (raw, non-owning)
-    using OutermostContextType = typename ContextType::OutermostContextType;// Outermost state machine type
-    using InnerContextType = Derived;                                       // This state as inner context type
-    using InnerContextPtrType = Derived*;                                   // This state's pointer type
-    using OutermostContextBaseType = typename ContextType::OutermostContextBaseType; // Outermost state machine base class
-    using ContextTypeList = typename mp::PushFront<typename ContextType::ContextTypeList, ContextType>::type; // Context type list
-
-    const OutermostContextType& OutermostContext() const {
-        return p_context_->OutermostContext();
-    }
-
-    OutermostContextType& OutermostContext() {
-        return const_cast<OutermostContextType&>(std::as_const(*this).OutermostContext());
-    }
-
-    // Convenience: allow states to post without reaching through OutermostContext().
-    template <class Ev>
-    void PostEvent(Ev&& event) {
-        OutermostContext().PostEvent(std::forward<Ev>(event));
-    }
-
-    // Defers the currently handled event (call from a reaction).
+    using reactions = mp::List<>;
+    using ContextType = typename ContextState::InnerContextType;
+    using ContextPtrType = typename ContextType::InnerContextPtrType;
+    using OutermostContextType = typename ContextType::OutermostContextType;
+    using InnerContextType = Derived;
+    using InnerContextPtrType = Derived*;
+    using OutermostContextBaseType = typename ContextType::OutermostContextBaseType;
+    using ContextTypeList = typename mp::PushFront<typename ContextType::ContextTypeList, ContextType>::type;
+    const OutermostContextType& OutermostContext() const { return p_context_->OutermostContext(); }
+    OutermostContextType& OutermostContext() { return const_cast<OutermostContextType&>(std::as_const(*this).OutermostContext()); }
+    const OutermostContextBaseType& OutermostContextBase() const { return p_context_->OutermostContextBase(); }
+    OutermostContextBaseType& OutermostContextBase() { return p_context_->OutermostContextBase(); }
+    template <class Ev> void PostEvent(Ev&& event) { OutermostContext().PostEvent(std::forward<Ev>(event)); }
     [[nodiscard]] Result defer_event() {
-        UFSM_ASSERT(OutermostContextBase().CurrentEventPtr() != nullptr);
+        UFSM_ASSERT(p_context_->OutermostContextBase().current_event_ != nullptr);
         deferred_flag_ = true;
         return Result::kDeferEvent;
     }
-
-    template <class TargetContext>
-    const TargetContext& Context() const {
-        if constexpr (std::is_base_of_v<TargetContext, Derived>) {
+    template <class TargetContext> const TargetContext& Context() const {
+        if constexpr (std::is_same_v<TargetContext, Derived> || std::is_base_of_v<TargetContext, Derived>) {
             return *static_cast<const Derived*>(this);
         } else {
             return p_context_->template Context<TargetContext>();
         }
     }
-
-    template <class TargetContext>
-    TargetContext& Context() {
-        return const_cast<TargetContext&>(std::as_const(*this).template Context<TargetContext>());
-    }
-
-    // Transition with action executed on the least common ancestor context.
-    template <class DestState, class Action = std::nullptr_t>
-    [[nodiscard]] Result Transit(Action&& action = nullptr) {
-        return TransitImpl<DestState>(std::forward<Action>(action));
-    }
-
-    // Boost.Statechart-like convenience APIs.
+    template <class TargetContext> TargetContext& Context() { return const_cast<TargetContext&>(std::as_const(*this).template Context<TargetContext>()); }
+    template <class DestState, class Action = std::nullptr_t> [[nodiscard]] Result Transit(Action&& action = nullptr) { return TransitImpl<DestState>(std::forward<Action>(action)); }
     [[nodiscard]] constexpr Result forward_event() const noexcept { return Result::kForwardEvent; }
     [[nodiscard]] constexpr Result discard_event() const noexcept { return Result::kDiscardEvent; }
     [[nodiscard]] constexpr Result consume_event() const noexcept { return Result::kConsumed; }
-
-    const void* TypeId() const noexcept override {
-        return StaticTypeId();
-    }
-
+    const void* TypeId() const noexcept override { return StaticTypeId(); }
     const char* Name() const noexcept override {
-        return detail::PrettyTypeNameCStr<Derived>();
+        static const std::string name{detail::PrettyTypeName<Derived>()};
+        return name.c_str();
     }
-
-private:
-    static const void* StaticTypeId() noexcept {
-        static const int tag = 0;
-        return &tag;
-    }
-
+    static const void* StaticTypeId() noexcept { static const int tag = 0; return &tag; }
 protected:
-    State() : p_context_(nullptr) {}
-
-    State(ContextType& context) : p_context_(&context) {}
-
+    State(ContextType* context = nullptr) : p_context_(context) {}
     ~State() {
-        if (p_context_ != nullptr && deferred_flag_) {
-            OutermostContextBase().ReleaseDeferredEvents();
+        if (p_context_ && deferred_flag_) {
+            auto& out = p_context_->OutermostContextBase();
+            for (; !out.deferred_events_.empty(); out.deferred_events_.pop_back())
+                out.posted_events_.push_front(std::move(out.deferred_events_.back()));
         }
     }
-
 private:
-    void SetContext(ContextPtrType p_context) {
-        static_assert(std::is_pointer_v<ContextPtrType>,
-                      "ufsm: ContextPtrType is expected to be a raw pointer type.");
-        p_context_ = p_context;
-    }
-
     template <class DestState, class Action>
     [[nodiscard]] Result TransitImpl(Action&& action) {
         using CommonCtx = typename mp::FindFirstCommon<ContextTypeList, typename DestState::ContextTypeList>::type;
         using TermState = typename mp::FindChildOf<typename mp::PushFront<ContextTypeList, Derived>::type, CommonCtx>::type;
-
-        TermState& term_state(Context<TermState>());
-        CommonCtx& common_ctx = term_state.template Context<CommonCtx>();
-        auto* p_common = &common_ctx;
+        auto& term_state = Context<TermState>();
+        auto& common_ctx = term_state.template Context<CommonCtx>();
         auto& out_base = common_ctx.OutermostContextBase();
-
 #if !defined(NDEBUG)
         UFSM_ASSERT(!out_base.ufsm_in_transition_);
-        out_base.ufsm_in_transition_ = true;
-        struct UfsmTransitionGuard {
-            bool& f;
-            ~UfsmTransitionGuard() { f = false; }
-        } guard{out_base.ufsm_in_transition_};
+        struct UfsmTransitionGuard { bool& f; ~UfsmTransitionGuard() { f = false; } } guard{out_base.ufsm_in_transition_ = true};
 #endif
-
-        out_base.TerminateAsPartOfTransit(term_state);
-        InvokeTransitionAction(std::forward<Action>(action), common_ctx);
-        detail::Constructor<typename detail::MakeContextList<CommonCtx, DestState>::type, OutermostContextBaseType>::Construct(
-            p_common, out_base);
-
+        out_base.TerminateImpl(term_state);
+        if constexpr (!std::is_same_v<std::remove_reference_t<Action>, std::nullptr_t>) {
+            if constexpr (std::is_invocable_v<Action&&, CommonCtx&>) std::forward<Action>(action)(common_ctx);
+            else std::forward<Action>(action)();
+        }
+        detail::Constructor<typename detail::MakeContextList<CommonCtx, DestState>::type, OutermostContextBaseType>::Construct(&common_ctx, out_base);
         return Result::kConsumed;
     }
-
     template <typename... Reactions>
     Result LocalReact(const detail::EventBase& event, mp::List<Reactions...>) {
         Result res = Result::kNoReaction;
-        (void)((res = Reactions::React(*static_cast<Derived*>(this), event),
-                res != Result::kNoReaction) ||
-               ...);
+        (void)((res = Reactions::React(*static_cast<Derived*>(this), event), res != Result::kNoReaction) || ...);
         return res == Result::kNoReaction ? Result::kForwardEvent : res;
     }
-
-    // Internal plumbing used by transitions/deferral.
-    OutermostContextBaseType& OutermostContextBase() {
-        return p_context_->OutermostContextBase();
-    }
-
     Result ReactImpl(const detail::EventBase& event) override {
-        StaticChecks();
         auto res = LocalReact(event, typename Derived::reactions{});
         return res == Result::kForwardEvent ? p_context_->ReactImpl(event) : res;
     }
-
-    template <typename, typename, typename>
-    friend class ufsm::State;
-    template <class, class>
-    friend class ufsm::StateMachine;
-    template <class, class>
-    friend struct ufsm::detail::Constructor;
-
+    template <typename, typename, typename> friend class ufsm::State;
+    template <class, class> friend class ufsm::StateMachine;
+    template <class, class> friend struct ufsm::detail::Constructor;
     static void DeepConstruct(const ContextPtrType& p_context, OutermostContextBaseType& out_context) {
         auto* p_inner = ShallowConstruct(p_context, out_context);
         if constexpr (!std::is_same_v<void, InnerInitial>) InnerInitial::DeepConstruct(p_inner, out_context);
     }
-
     static InnerContextPtrType ShallowConstruct(const ContextPtrType& p_context, OutermostContextBaseType& out_context) {
-        static_assert(std::is_pointer_v<ContextPtrType>,
-                      "ufsm: ContextPtrType is expected to be a raw pointer type.");
-        std::unique_ptr<Derived> p_inner;
+        std::unique_ptr<Derived> p;
         if constexpr (std::is_constructible_v<Derived, ContextType&>) {
-            p_inner = std::make_unique<Derived>(*p_context);
+            p = std::make_unique<Derived>(*p_context);
         } else {
-            p_inner = std::make_unique<Derived>();
-            p_inner->SetContext(p_context);
+            p = std::make_unique<Derived>();
+            p->p_context_ = p_context;
         }
-        return out_context.Add(std::move(p_inner), p_context);
+        return out_context.Add(std::move(p));
     }
-
-    static void StaticChecks() {
-        static_assert(std::is_base_of_v<State<Derived, ContextState, InnerInitial>, Derived>,
-                      "Derived must inherit from ufsm::State<Derived, ContextState, InnerInitial> (CRTP).");
-        static_assert(detail::IsMpList<typename Derived::reactions>::value,
-                      "Derived::reactions must be ufsm::List<...>.");
-        static_assert(detail::AllAreReactionEntries<typename Derived::reactions>::value,
-                      "Derived::reactions must contain only ufsm::Reaction<...>, ufsm::Transition<...,...>, or ufsm::Deferral<...>.");
-    }
-
-    // Invoke transition action with preference for action(CommonCtx&) over action().
-    template <class Action, class CommonCtx>
-    static void InvokeTransitionAction(Action&& action, CommonCtx& common_ctx) {
-        using ActionT = std::remove_reference_t<Action>;
-        if constexpr (std::is_same_v<ActionT, std::nullptr_t>) {
-            (void)action;
-            (void)common_ctx;
-        } else if constexpr (std::is_invocable_v<Action&&, CommonCtx&>) {
-            std::forward<Action>(action)(common_ctx);
-        } else if constexpr (std::is_invocable_v<Action&&>) {
-            std::forward<Action>(action)();
-        } else {
-            static_assert(std::is_invocable_v<Action&&, CommonCtx&> || std::is_invocable_v<Action&&>,
-                          "Transition action must be invocable either as action(CommonCtx&) or action().");
-        }
-    }
-
-    // Non-owning pointer to the parent context.
-    // Valid only while this state is active; do not cache across transitions.
     ContextPtrType p_context_;
-
     bool deferred_flag_ = false;
 };
-
-// State machine template class
-// Derived: Derived state machine type (CRTP pattern)
-// InnerInitial: Initial state type
 template <typename Derived, typename InnerInitial>
 class StateMachine {
 public:
-    using InnerContextType = Derived;               // This state machine as inner context type
-    using OutermostContextType = Derived;           // Outermost context (the state machine itself)
-    using OutermostContextBaseType = StateMachine;  // Outermost base class
-    using InnerContextPtrType = StateMachine*;      // Root context pointer type (raw, non-owning)
-    using ContextTypeList = mp::List<>;             // Empty context list (state machine is root)
-    using ContextType = void;                       // No parent context
+    using InnerContextType = Derived;
+    using OutermostContextType = Derived;
+    using OutermostContextBaseType = StateMachine;
+    using InnerContextPtrType = StateMachine*;
+    using ContextTypeList = mp::List<>;
+    using ContextType = void;
 
     void Initiate() {
-        static_assert(std::is_base_of_v<StateMachine<Derived, InnerInitial>, Derived>,
-                      "Derived must inherit from ufsm::StateMachine<Derived, InnerInitial> (CRTP).");
-        static_assert(std::is_base_of_v<detail::StateBase, InnerInitial>,
-                      "InnerInitial must be a ufsm state type (derive from ufsm::State<...>)." );
         TerminateImpl();
         InnerInitial::DeepConstruct(static_cast<Derived*>(this), *static_cast<Derived*>(this));
     }
-
     void Terminate() {
 #if !defined(NDEBUG)
         UFSM_ASSERT(!ufsm_in_transition_);
 #endif
         TerminateImpl();
     }
-
     bool Terminated() const noexcept { return !current_state_; }
-
-    template <class Ev>
-    Result ProcessEvent(const Ev& event) {
-        static_assert(std::is_base_of_v<detail::EventBase, Ev>,
-                      "Event type must derive from ufsm::Event<Ev> (i.e., from ufsm::detail::EventBase).");
-        static_assert(!std::is_same_v<std::decay_t<Ev>, detail::EventBase>,
-                      "ProcessEvent expects a concrete event type (derive from ufsm::Event<Derived>), not ufsm::detail::EventBase.");
-        return ProcessEventLoop(event);
+    template <class Ev> Result ProcessEvent(const Ev& event) { return ProcessEventLoop(event); }
+    template <class Ev> void PostEvent(Ev&& event) { posted_events_.push_back(static_cast<const detail::EventBase&>(event).Clone()); }
+    template <class StateT> bool IsInState() const {
+        static_assert(std::is_base_of_v<detail::StateBase, StateT>, "StateT must be a state");
+        for (const auto& p : active_path_) if (p && p->TypeId() == StateT::StaticTypeId()) return true;
+        return false;
     }
-
-    // Posted events: enqueued now, drained before ProcessEvent() returns.
-    template <class Ev>
-    void PostEvent(Ev&& event) {
-        static_assert(std::is_base_of_v<detail::EventBase, std::decay_t<Ev>>,
-                      "Event type must derive from ufsm::Event<Ev> (i.e., from ufsm::detail::EventBase)." );
-        posted_events_.push_back(static_cast<const detail::EventBase&>(event).Clone());
-    }
-
-    template <class StateT>
-    StateT* StatePtr() {
-        return const_cast<StateT*>(std::as_const(*this).template StatePtr<StateT>());
-    }
-
-    template <class StateT>
-    const StateT* StatePtr() const {
-        static_assert(std::is_base_of_v<detail::StateBase, StateT>,
-                      "StateT must be a ufsm state type (derive from ufsm::State<...>)." );
-
-        for (const auto& p_state : active_path_) {
-            if (p_state && p_state->TypeId() == StateT::StaticTypeId()) return static_cast<const StateT*>(p_state.get());
-        }
-        return nullptr;
-    }
-
-    template <class StateT>
-    bool IsInState() const { return this->template StatePtr<StateT>() != nullptr; }
-
-    template <class TargetContext>
-    const TargetContext& Context() const {
-        return *static_cast<const Derived*>(this);
-    }
-
-    template <class TargetContext>
-    TargetContext& Context() {
-        return const_cast<TargetContext&>(std::as_const(*this).template Context<TargetContext>());
-    }
-
-    const OutermostContextType& OutermostContext() const { return *static_cast<const Derived*>(this); }
-
-    OutermostContextType& OutermostContext() {
-        return const_cast<OutermostContextType&>(std::as_const(*this).OutermostContext());
-    }
-
+    template <class TargetContext = Derived> const TargetContext& Context() const { return *static_cast<const Derived*>(this); }
+    template <class TargetContext = Derived> TargetContext& Context() { return *static_cast<Derived*>(this); }
+    const Derived& OutermostContext() const { return *static_cast<const Derived*>(this); }
+    Derived& OutermostContext() { return *static_cast<Derived*>(this); }
+    const StateMachine& OutermostContextBase() const { return *this; }
+    StateMachine& OutermostContextBase() { return *this; }
 protected:
     StateMachine() = default;
-
     virtual ~StateMachine() { TerminateImpl(); }
-
 private:
-    template <typename, typename, typename>
-    friend class ufsm::State;
-
-    template <class T>
-    struct RestoreOnExit { T& slot; T prev; RestoreOnExit(T& s, T v) : slot(s), prev(std::exchange(s, v)) {} ~RestoreOnExit() { slot = prev; } };
-
-    OutermostContextBaseType& OutermostContextBase() { return *this; }
-
-    void TerminateAsPartOfTransit(detail::StateBase& state) { TerminateImpl(state); }
-
+    template <typename, typename, typename> friend class ufsm::State;
+    template <class T> struct RestoreOnExit { T& slot; T prev; RestoreOnExit(T& s, T v) : slot(s), prev(std::exchange(s, v)) {} ~RestoreOnExit() { slot = prev; } };
 #if !defined(NDEBUG)
     bool ufsm_in_transition_ = false;
 #endif
-
     Result ReactImpl(const detail::EventBase&) { return Result::kForwardEvent; }
-
-    template <class StateType, class ParentType>
-    StateType* Add(std::unique_ptr<StateType> p_state, const ParentType& parent) {
-        (void)parent;
-        constexpr bool is_leaf = std::is_same_v<typename StateType::InnerInitialType, void>;
+    template <class StateType> StateType* Add(std::unique_ptr<StateType> p_state) {
         p_state->SetActiveIndex(active_path_.size());
-        StateType* const raw = p_state.get();
+        StateType* raw = p_state.get();
         active_path_.push_back(std::move(p_state));
-
-        if constexpr (is_leaf) current_state_ = raw;
+        if constexpr (std::is_same_v<typename StateType::InnerInitialType, void>) current_state_ = raw;
         return raw;
     }
-
     Result ProcessEventLoop(const detail::EventBase& event) {
 #if !defined(NDEBUG)
         UFSM_ASSERT(!ufsm_in_transition_);
@@ -626,75 +321,38 @@ private:
         if (ufsm_in_event_loop_) return ProcessEventImpl(event);
         RestoreOnExit<bool> guard(ufsm_in_event_loop_, true);
         Result last = ProcessEventImpl(event);
-        for (; !posted_events_.empty(); posted_events_.pop_front()) {
-            auto ev = std::move(posted_events_.front());
-            UFSM_ASSERT(ev != nullptr);
-            last = ProcessEventImpl(*ev);
-        }
+        for (; !posted_events_.empty(); posted_events_.pop_front())
+            last = ProcessEventImpl(*posted_events_.front());
         return last;
     }
-
-    const detail::EventBase* CurrentEventPtr() const noexcept { return current_event_; }
-
-    void ReleaseDeferredEvents() { PrependPostedEvents(deferred_events_); }
-
-    void PrependPostedEvents(std::deque<detail::EventBase::Ptr>& events) {
-        for (; !events.empty(); events.pop_back()) posted_events_.push_front(std::move(events.back()));
-    }
-
     Result ProcessEventImpl(const detail::EventBase& event) {
-        RestoreOnExit<const detail::EventBase*> current_event_guard(current_event_, &event);
-
-        const auto res = SendEvent(event);
-        if (res == Result::kDeferEvent) {
-            deferred_events_.push_back(event.Clone());
-            return Result::kConsumed;
-        }
-
-        // Optional hook on the state machine: void OnUnhandledEvent(const ufsm::detail::EventBase&)
+        RestoreOnExit<const detail::EventBase*> guard(current_event_, &event);
+        auto res = current_state_ ? current_state_->ReactImpl(event) : Result::kForwardEvent;
+        if (res == Result::kDeferEvent) { deferred_events_.push_back(event.Clone()); return Result::kConsumed; }
         if (res == Result::kForwardEvent) detail::InvokeOnUnhandledEventIfPresent(*static_cast<Derived*>(this), event);
         return res;
     }
-
-    // Keeps the outermost-to-innermost prefix of size keep_count and destroys the rest.
-    // This provides deterministic destruction order (innermost first).
-    void ResetToDepth(std::size_t keep_count) {
-        if (keep_count < active_path_.size()) active_path_.resize(keep_count);
+    void ResetToDepth(std::size_t n) {
+        while (active_path_.size() > n) active_path_.pop_back();
         current_state_ = active_path_.empty() ? nullptr : active_path_.back().get();
     }
-
-    Result SendEvent(const detail::EventBase& event) { return current_state_ ? current_state_->ReactImpl(event) : Result::kForwardEvent; }
-
-    void TerminateImpl() {
-        ResetToDepth(0);
-        posted_events_.clear();
-        deferred_events_.clear();
-    }
-
-    // Termination used by transition boundary semantics.
-    // Destroys states from the current leaf up to and including the given boundary state.
-    // The parent of the boundary remains alive and becomes the construction anchor.
+    void TerminateImpl() { ResetToDepth(0); posted_events_.clear(); deferred_events_.clear(); }
     void TerminateImpl(detail::StateBase& state) {
         if (active_path_.empty()) { current_state_ = nullptr; return; }
-        const auto idx = state.ActiveIndex();
-        const bool ok = idx < active_path_.size() && active_path_[idx].get() == &state;
-        UFSM_ASSERT(ok);
-        ResetToDepth(ok ? idx : 0);
+        auto idx = state.ActiveIndex();
+        UFSM_ASSERT(idx < active_path_.size() && active_path_[idx].get() == &state);
+        ResetToDepth(idx < active_path_.size() && active_path_[idx].get() == &state ? idx : 0);
     }
-
-    detail::StateBase* current_state_ = nullptr; // Current active leaf
+    detail::StateBase* current_state_ = nullptr;
     std::vector<std::unique_ptr<detail::StateBase>> active_path_;
     const detail::EventBase* current_event_ = nullptr;
-    std::deque<detail::EventBase::Ptr> deferred_events_;
-    std::deque<detail::EventBase::Ptr> posted_events_;
+    std::deque<detail::EventBase::Ptr> deferred_events_, posted_events_;
     bool ufsm_in_event_loop_ = false;
 };
-
 } // namespace ufsm
-
-#define FSM_STATE_MACHINE(Name, InnerInitial) struct InnerInitial; struct Name : ufsm::StateMachine<Name, InnerInitial>
-#define _FSM_STATE_2(Name, Context) struct Context; struct Name : ufsm::State<Name, Context>
-#define _FSM_STATE_3(Name, Context, InnerInitial) struct Context; struct InnerInitial; struct Name : ufsm::State<Name, Context, InnerInitial>
+#define FSM_STATE_MACHINE(N, I) struct I; struct N : ufsm::StateMachine<N, I>
+#define _FSM_STATE_2(N, C) struct C; struct N : ufsm::State<N, C>
+#define _FSM_STATE_3(N, C, I) struct C; struct I; struct N : ufsm::State<N, C, I>
 #define FSM_STATE(...) _FSM_GET_MACRO(__VA_ARGS__, _FSM_STATE_3, _FSM_STATE_2)(__VA_ARGS__)
 #define _FSM_GET_MACRO(_1, _2, _3, NAME, ...) NAME
-#define FSM_EVENT(Name) struct Name : ufsm::Event<Name>
+#define FSM_EVENT(N) struct N : ufsm::Event<N>

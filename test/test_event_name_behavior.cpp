@@ -8,9 +8,9 @@ FSM_EVENT(NameEventPing) {};
 TEST(EventNameBehaviorTest, EventProvidesReadableName) {
     NameEventPing ev;
     const char* name = ev.Name();
+    
     ASSERT_NE(name, nullptr);
-
-    const std::string_view sv{name};
+    std::string_view sv{name};
     EXPECT_FALSE(sv.empty());
 
     // Best-effort: ensure the emitted name contains the type identifier.
