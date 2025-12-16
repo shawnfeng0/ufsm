@@ -33,6 +33,22 @@ FSM_STATE_MACHINE(Robot, Idle) {
     void OnUnhandledEvent(const ufsm::detail::EventBase& event) {
         std::cout << "[Robot] Warning: Unhandled event '" << event.Name() << "' in current state.\n";
     }
+
+    // Trace hook
+    void OnEventProcessed(const ufsm::detail::StateBase* leaf_state, const ufsm::detail::EventBase& event,
+                          ufsm::Result result) {
+        const char* state_name = leaf_state ? leaf_state->Name() : "None";
+        const char* result_str = "Unknown";
+        switch (result) {
+            case ufsm::Result::kNoReaction: result_str = "NoReaction"; break;
+            case ufsm::Result::kForwardEvent: result_str = "ForwardEvent"; break;
+            case ufsm::Result::kDiscardEvent: result_str = "DiscardEvent"; break;
+            case ufsm::Result::kDeferEvent: result_str = "DeferEvent"; break;
+            case ufsm::Result::kConsumed: result_str = "Consumed"; break;
+        }
+        std::cout << "[Trace] State: " << state_name << ", Event: " << event.Name() << ", Result: " << result_str
+                  << "\n";
+    }
 };
 
 // --------------------------------------------------------------------------

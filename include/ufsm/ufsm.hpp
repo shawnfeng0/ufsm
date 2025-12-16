@@ -217,6 +217,22 @@ inline void InvokeOnUnhandledEventIfPresent(MachineType& machine, const EventBas
   if constexpr (HasOnUnhandledEventMethod<MachineType>::value) machine.OnUnhandledEvent(event);
 }
 
+// SFINAE check for OnEventProcessed method.
+template <typename MachineType, typename = void>
+struct HasOnEventProcessedMethod : std::false_type {};
+
+template <typename MachineType>
+struct HasOnEventProcessedMethod<
+    MachineType, std::void_t<decltype(std::declval<MachineType&>().OnEventProcessed(
+                     std::declval<const StateBase*>(), std::declval<const EventBase&>(), std::declval<Result>()))>>
+    : std::true_type {};
+
+template <typename MachineType>
+inline void InvokeOnEventProcessedIfPresent(MachineType& machine, const StateBase* leaf_state, const EventBase& event,
+                                            Result result) {
+  if constexpr (HasOnEventProcessedMethod<MachineType>::value) machine.OnEventProcessed(leaf_state, event, result);
+}
+
 // Helper to construct a chain of states.
 // Recursively constructs states from Head to Tail.
 template <class ContextList, class OutermostContext>
@@ -630,6 +646,8 @@ class StateMachine {
 
     // Delegate reaction to the current state.
     auto res = current_state_ ? current_state_->ReactImpl(event) : Result::kForwardEvent;
+
+    detail::InvokeOnEventProcessedIfPresent(*static_cast<Derived*>(this), current_state_, event, res);
 
     // Handle deferral.
     if (res == Result::kDeferEvent) {

@@ -44,6 +44,12 @@ struct Robot : ufsm::StateMachine<Robot, Idle> {
     void OnUnhandledEvent(const ufsm::detail::EventBase& e) {
         std::cout << "Unhandled event: " << e.Name() << "\n";
     }
+
+    // Optional: Trace all event processing results
+    void OnEventProcessed(const ufsm::detail::StateBase* leaf, const ufsm::detail::EventBase& e, ufsm::Result r) {
+        std::cout << "Event " << e.Name() << " processed by "
+                  << (leaf ? leaf->Name() : "null") << " result: " << (int)r << "\n";
+    }
 };
 
 // 4. Define States
@@ -130,6 +136,19 @@ Events can be deferred to be processed later (e.g., after a state change).
 using reactions = ufsm::List<
     ufsm::Deferral<EvBusy> // Defer EvBusy while in this state
 >;
+```
+
+### Debugging & Tracing
+
+You can add an `OnEventProcessed` method to your StateMachine class to trace every event processed by the system. This is a zero-cost abstraction (SFINAE) if not defined.
+
+```cpp
+void OnEventProcessed(const ufsm::detail::StateBase* leaf, const ufsm::detail::EventBase& e, ufsm::Result r) {
+    // leaf: The state that handled (or tried to handle) the event
+    // e: The event being processed
+    // r: The result (Consumed, Forwarded, Deferred, etc.)
+    std::cout << "[Trace] " << e.Name() << " -> " << (int)r << "\n";
+}
 ```
 
 ## Ownership Model
