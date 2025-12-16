@@ -126,6 +126,9 @@ class Deferral;
 template <typename Derived, typename InnerInitial>
 class StateMachine;
 
+template <typename Derived, typename ContextState, typename InnerInitial>
+class State;
+
 namespace detail {
 
 // Helper to get a pretty type name for debugging.
@@ -179,17 +182,24 @@ class EventBase {
 // Base class for all states.
 class StateBase {
  public:
-  virtual Result ReactImpl(const EventBase& event) = 0;
-  virtual const void* TypeId() const noexcept = 0;
   virtual const char* Name() const noexcept { return "<ufsm::state>"; }
   virtual ~StateBase() = default;
-  std::size_t ActiveIndex() const noexcept { return active_index_; }
-  void SetActiveIndex(std::size_t index) noexcept { active_index_ = index; }
 
  protected:
   StateBase() = default;
 
+  virtual Result ReactImpl(const EventBase& event) = 0;
+  virtual const void* TypeId() const noexcept = 0;
+
  private:
+  std::size_t ActiveIndex() const noexcept { return active_index_; }
+  void SetActiveIndex(std::size_t index) noexcept { active_index_ = index; }
+
+  template <typename, typename, typename>
+  friend class ::ufsm::State;
+  template <typename, typename>
+  friend class ::ufsm::StateMachine;
+
   std::size_t active_index_ = 0;
 };
 
@@ -330,8 +340,6 @@ class State : public detail::StateBase {
   OutermostContextType& OutermostContext() {
     return const_cast<OutermostContextType&>(std::as_const(*this).OutermostContext());
   }
-  const OutermostContextBaseType& OutermostContextBase() const { return context_->OutermostContextBase(); }
-  OutermostContextBaseType& OutermostContextBase() { return context_->OutermostContextBase(); }
 
   // Post an event to the queue.
   template <class Ev>
@@ -377,10 +385,6 @@ class State : public detail::StateBase {
     static const std::string name{detail::PrettyTypeName<Derived>()};
     return name.c_str();
   }
-  static const void* StaticTypeId() noexcept {
-    static const int tag = 0;
-    return &tag;
-  }
 
  protected:
   State(ContextPtrType context = nullptr) : context_(context) {}
@@ -394,18 +398,22 @@ class State : public detail::StateBase {
   }
 
  private:
+  static const void* StaticTypeId() noexcept {
+    static const int tag = 0;
+    return &tag;
+  }
+
+  const OutermostContextBaseType& OutermostContextBase() const { return context_->OutermostContextBase(); }
+  OutermostContextBaseType& OutermostContextBase() { return context_->OutermostContextBase(); }
+
   template <class DestState, class Action>
   [[nodiscard]] Result TransitImpl(Action&& action) {
     // Find the common ancestor (Least Common Ancestor) between the current state and the destination state.
-    using CommonAncestorType = typename mp::FindFirstCommon<ContextTypeList, typename DestState::ContextTypeList>::type;
-    
-    // Find the child of the common ancestor that is on the path to the current state.
-    // We need to terminate from this state downwards.
-    using StateToTerminateFromType = typename mp::FindChildOf<typename mp::PushFront<ContextTypeList, Derived>::type, CommonAncestorType>::type;
+    // We include Derived (current state) in the search list to handle drill-down transitions correctly.
+    using CommonAncestorType = typename mp::FindFirstCommon<typename mp::PushFront<ContextTypeList, Derived>::type,
+                                                            typename DestState::ContextTypeList>::type;
 
-    auto& state_to_terminate_from = Context<StateToTerminateFromType>();
-    auto& common_ancestor = state_to_terminate_from.template Context<CommonAncestorType>();
-    auto& state_machine = common_ancestor.OutermostContextBase();
+    auto& state_machine = OutermostContextBase();
 
 #if !defined(NDEBUG)
     UFSM_ASSERT(!state_machine.in_transition_);
@@ -415,20 +423,53 @@ class State : public detail::StateBase {
     } guard{state_machine.in_transition_ = true};
 #endif
 
-    // Terminate states down to the common ancestor.
-    state_machine.TerminateImpl(state_to_terminate_from);
+    // If the common ancestor is the current state class itself (Derived),
+    // it means we are transitioning to a child state (drilling down).
+    // Note: Self-transitions (DestState == Derived) are NOT handled here because
+    // Derived is not in DestState::ContextTypeList, so LCA would be Parent.
+    if constexpr (std::is_same_v<CommonAncestorType, Derived>) {
+      // We are drilling down. We keep the current state active
+      // and terminate anything below it (if any).
+      state_machine.TerminateAfter(*this);
 
-    // Execute transition action.
-    if constexpr (!std::is_same_v<std::remove_reference_t<Action>, std::nullptr_t>) {
-      if constexpr (std::is_invocable_v<Action&&, CommonAncestorType&>)
-        std::forward<Action>(action)(common_ancestor);
-      else
-        std::forward<Action>(action)();
+      // Execute transition action.
+      // For drill-down, the action is executed on 'this' (Derived).
+      if constexpr (!std::is_same_v<std::remove_reference_t<Action>, std::nullptr_t>) {
+        if constexpr (std::is_invocable_v<Action&&, Derived&>)
+          std::forward<Action>(action)(*static_cast<Derived*>(this));
+        else
+          std::forward<Action>(action)();
+      }
+
+      // Construct the new state path from 'this' to DestState.
+      detail::Constructor<typename detail::MakeContextList<Derived, DestState>::type,
+                          OutermostContextBaseType>::Construct(static_cast<Derived*>(this), state_machine);
+
+    } else {
+      // Standard case: LCA is an ancestor.
+      // Find the child of the common ancestor that is on the path to the current state.
+      // We need to terminate from this state downwards.
+      using StateToTerminateFromType =
+          typename mp::FindChildOf<typename mp::PushFront<ContextTypeList, Derived>::type, CommonAncestorType>::type;
+
+      auto& state_to_terminate_from = Context<StateToTerminateFromType>();
+      auto& common_ancestor = state_to_terminate_from.template Context<CommonAncestorType>();
+
+      // Terminate states down to the common ancestor.
+      state_machine.TerminateImpl(state_to_terminate_from);
+
+      // Execute transition action.
+      if constexpr (!std::is_same_v<std::remove_reference_t<Action>, std::nullptr_t>) {
+        if constexpr (std::is_invocable_v<Action&&, CommonAncestorType&>)
+          std::forward<Action>(action)(common_ancestor);
+        else
+          std::forward<Action>(action)();
+      }
+
+      // Construct the new state path from the common ancestor to the destination state.
+      detail::Constructor<typename detail::MakeContextList<CommonAncestorType, DestState>::type,
+                          OutermostContextBaseType>::Construct(&common_ancestor, state_machine);
     }
-
-    // Construct the new state path from the common ancestor to the destination state.
-    detail::Constructor<typename detail::MakeContextList<CommonAncestorType, DestState>::type,
-                        OutermostContextBaseType>::Construct(&common_ancestor, state_machine);
 
     return Result::kConsumed;
   }
@@ -540,14 +581,15 @@ class StateMachine {
 
   const Derived& OutermostContext() const { return *static_cast<const Derived*>(this); }
   Derived& OutermostContext() { return *static_cast<Derived*>(this); }
-  const StateMachine& OutermostContextBase() const { return *this; }
-  StateMachine& OutermostContextBase() { return *this; }
 
  protected:
   StateMachine() { active_path_.reserve(8); }
   virtual ~StateMachine() { TerminateImpl(); }
 
  private:
+  const StateMachine& OutermostContextBase() const { return *this; }
+  StateMachine& OutermostContextBase() { return *this; }
+
   template <typename, typename, typename>
   friend class ufsm::State;
 
@@ -621,6 +663,18 @@ class StateMachine {
     // Reset the state machine to the depth of the state being terminated.
     // This effectively exits all states deeper than 'state'.
     ResetToDepth(idx < active_path_.size() && active_path_[idx].get() == &state ? idx : 0);
+  }
+
+  void TerminateAfter(detail::StateBase& state) {
+    if (active_path_.empty()) {
+      current_state_ = nullptr;
+      return;
+    }
+    auto idx = state.ActiveIndex();
+    UFSM_ASSERT(idx < active_path_.size() && active_path_[idx].get() == &state);
+    // Reset the state machine to the depth after the state.
+    // This effectively exits all states deeper than 'state', but keeps 'state' active.
+    ResetToDepth(idx < active_path_.size() && active_path_[idx].get() == &state ? idx + 1 : 0);
   }
 
   detail::StateBase* current_state_ = nullptr;
