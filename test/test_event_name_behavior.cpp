@@ -1,18 +1,18 @@
 #include <gtest/gtest.h>
-#include <ufsm/ufsm.hpp>
 
 #include <string_view>
+#include <ufsm/ufsm.hpp>
 
-FSM_EVENT(NameEventPing) {};
+FSM_EVENT(NameEventPing){};
 
 TEST(EventNameBehaviorTest, EventProvidesReadableName) {
-    NameEventPing ev;
-    const char* name = ev.Name();
-    
-    ASSERT_NE(name, nullptr);
-    std::string_view sv{name};
-    EXPECT_FALSE(sv.empty());
+  NameEventPing ev;
+  const char* name = ev.Name();
 
-    // Best-effort: ensure the emitted name contains the type identifier.
-    EXPECT_NE(sv.find("NameEventPing"), std::string_view::npos);
+  ASSERT_NE(name, nullptr);
+  std::string_view sv{name};
+  EXPECT_FALSE(sv.empty());
+
+  // Best-effort: ensure the emitted name contains the type identifier.
+  EXPECT_NE(sv.find("NameEventPing"), std::string_view::npos);
 }

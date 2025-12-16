@@ -11,12 +11,14 @@
 
 FSM_STATE(StateA, Machine, StateAA) {
   std::string state_a_context_string;
-  explicit StateA(ContextPtrType ctx) : State(ctx) {}
+  template <typename T>
+  explicit StateA(T ctx) : State(ctx) {}
 };
 
 FSM_STATE(StateAA, StateA, StateAAA) {
- public:
-  explicit StateAA(ContextPtrType ctx) : State(ctx) {
+  std::string state_aa_context_string;
+  template <typename T>
+  explicit StateAA(T ctx) : State(ctx) {
     MARK_FUNCTION;
     ctx->state_a_context_string = "modified_in_StateAA_ctor_ptr";
     std::cout << "StateAA constructed with context modification (ptr): " << ctx->state_a_context_string << std::endl;
@@ -41,7 +43,7 @@ FSM_STATE(StateAAAA, StateAAA) {
 
   ufsm::Result React(const EventB&) {
     MARK_FUNCTION;
-    return discard_event();
+    return DiscardEvent();
   }
 
  public:

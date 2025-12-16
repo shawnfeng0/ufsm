@@ -8,13 +8,10 @@ int main() {
   CmdProcessor cmdline;
   cmdline.Add("connect", [&]() { connector.ProcessEvent(EvConnect{}); })
       .Add("disconnect", [&]() { connector.ProcessEvent(EvDisconnect{}); })
-      .Add("connect_success",
-           [&]() { connector.ProcessEvent(EvConnectSuccess{}); })
-      .Add("connect_failure",
-           [&]() { connector.ProcessEvent(EvConnectFailure{}); })
+      .Add("connect_success", [&]() { connector.ProcessEvent(EvConnectSuccess{}); })
+      .Add("connect_failure", [&]() { connector.ProcessEvent(EvConnectFailure{}); })
       .Add("tick", [&]() { connector.ProcessEvent(EvTick{}); })
-      .Add("disconnect_success",
-           [&]() { connector.ProcessEvent(EvDisconnectSuccess{}); });
+      .Add("disconnect_success", [&]() { connector.ProcessEvent(EvDisconnectSuccess{}); });
 
   LOG << "Command: " << cmdline.DumpCmd() << std::endl << "$ ";
   std::string str;
