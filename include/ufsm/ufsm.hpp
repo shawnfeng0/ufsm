@@ -183,6 +183,7 @@ class EventBase {
 class StateBase {
  public:
   virtual const char* Name() const noexcept { return "<ufsm::state>"; }
+  virtual void Exit() {}
   virtual ~StateBase() = default;
 
  protected:
@@ -232,6 +233,20 @@ inline void InvokeOnEventProcessedIfPresent(MachineType& machine, const StateBas
                                             Result result) {
   if constexpr (HasOnEventProcessedMethod<MachineType>::value) machine.OnEventProcessed(leaf_state, event, result);
 }
+
+// SFINAE check for OnEntry method.
+template <typename StateType, typename = void>
+struct HasOnEntryMethod : std::false_type {};
+
+template <typename StateType>
+struct HasOnEntryMethod<StateType, std::void_t<decltype(std::declval<StateType&>().OnEntry())>> : std::true_type {};
+
+// SFINAE check for OnExit method.
+template <typename StateType, typename = void>
+struct HasOnExitMethod : std::false_type {};
+
+template <typename StateType>
+struct HasOnExitMethod<StateType, std::void_t<decltype(std::declval<StateType&>().OnExit())>> : std::true_type {};
 
 // Helper to construct a chain of states.
 // Recursively constructs states from Head to Tail.
@@ -414,6 +429,12 @@ class State : public detail::StateBase {
     return name.c_str();
   }
 
+  void Exit() override {
+    if constexpr (detail::HasOnExitMethod<Derived>::value) {
+      static_cast<Derived*>(this)->OnExit();
+    }
+  }
+
  protected:
   State(ContextPtrType context = nullptr) : context_(context) {}
   ~State() {
@@ -544,7 +565,11 @@ class State : public detail::StateBase {
       state = std::make_unique<Derived>();
       state->context_ = context;
     }
-    return out_context.Add(std::move(state));
+    auto* ptr = out_context.Add(std::move(state));
+    if constexpr (detail::HasOnEntryMethod<Derived>::value) {
+      ptr->OnEntry();
+    }
+    return ptr;
   }
 
   ContextPtrType context_;
@@ -679,7 +704,10 @@ class StateMachine {
   }
 
   void ResetToDepth(std::size_t n) {
-    while (active_path_.size() > n) active_path_.pop_back();
+    while (active_path_.size() > n) {
+      active_path_.back()->Exit();
+      active_path_.pop_back();
+    }
     current_state_ = active_path_.empty() ? nullptr : active_path_.back().get();
   }
 
