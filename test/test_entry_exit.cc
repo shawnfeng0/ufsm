@@ -1,4 +1,4 @@
-#include "ufsm/ufsm.hpp"
+#include "ufsm/ufsm.h"
 #include <gtest/gtest.h>
 #include <vector>
 #include <string>

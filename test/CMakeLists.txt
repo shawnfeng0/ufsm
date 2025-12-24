@@ -12,20 +12,20 @@ FetchContent_MakeAvailable(googletest)
 
 # Build a single test binary from all test sources in this directory.
 add_executable(ufsm_test
-  test_declarative_transition_behavior.cpp
-  test_drill_down_behavior.cpp
-  test_deferral_behavior.cpp
-  test_deferred_event_queue_behavior.cpp
-  test_event_name_behavior.cpp
-  test_multi_layer_lifecycle.cpp
-  test_destructor_behavior.cpp
-  test_event_routing_behavior.cpp
-  test_idempotency_behavior.cpp
-  test_state_query_behavior.cpp
-  test_transition_boundary_behavior.cpp
-  test_context_access_behavior.cpp
-  test_unhandled_event_hook_behavior.cpp
-  test_entry_exit.cpp
+  test_declarative_transition_behavior.cc
+  test_drill_down_behavior.cc
+  test_deferral_behavior.cc
+  test_deferred_event_queue_behavior.cc
+  test_event_name_behavior.cc
+  test_multi_layer_lifecycle.cc
+  test_destructor_behavior.cc
+  test_event_routing_behavior.cc
+  test_idempotency_behavior.cc
+  test_state_query_behavior.cc
+  test_transition_boundary_behavior.cc
+  test_context_access_behavior.cc
+  test_unhandled_event_hook_behavior.cc
+  test_entry_exit.cc
 )
 
 target_link_libraries(ufsm_test

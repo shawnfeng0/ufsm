@@ -1,4 +1,4 @@
-#include <ufsm/ufsm.hpp>
+#include <ufsm/ufsm.h>
 
 #include "../log.h"
 #include "StateA.h"

@@ -1,7 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <string>
-#include <ufsm/ufsm.hpp>
+#include <ufsm/ufsm.h>
 #include <vector>
 
 #include "test_support.h"

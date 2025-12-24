@@ -4,7 +4,7 @@
 
 ## Key Features
 
-*   **Header-only**: No build steps required, just include `<ufsm/ufsm.hpp>`.
+*   **Header-only**: No build steps required, just include `<ufsm/ufsm.h>`.
 *   **Hierarchical**: Supports nested states (composite states) with automatic drill-down and drill-up behavior.
 *   **Type-Safe**: Heavily relies on C++ templates and CRTP for compile-time checks.
 *   **Efficient Memory Model**: States are managed via `std::unique_ptr` with no shared pointer overhead.
@@ -25,7 +25,7 @@ Here is a simple example of a robot controller state machine.
 
 ```cpp
 #include <iostream>
-#include <ufsm/ufsm.hpp>
+#include <ufsm/ufsm.h>
 
 // 1. Define Events
 struct EvStart : ufsm::Event<EvStart> {};

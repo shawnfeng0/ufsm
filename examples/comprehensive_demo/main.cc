@@ -1,6 +1,6 @@
 #include <iostream>
 #include <string>
-#include "ufsm/ufsm.hpp"
+#include "ufsm/ufsm.h"
 
 // --------------------------------------------------------------------------
 // 1. Events Definition

@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
 
-#include <ufsm/ufsm.hpp>
+#include <ufsm/ufsm.h>
 
 FSM_EVENT(SQEvToB){};
 

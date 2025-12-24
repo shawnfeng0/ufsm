@@ -4,7 +4,7 @@
 
 #pragma once
 
-#include <ufsm/ufsm.hpp>
+#include <ufsm/ufsm.h>
 
 struct EventA : ufsm::Event<EventA> {};
 struct EventB : ufsm::Event<EventB> {};

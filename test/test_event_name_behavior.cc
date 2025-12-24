@@ -1,7 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <string_view>
-#include <ufsm/ufsm.hpp>
+#include <ufsm/ufsm.h>
 
 FSM_EVENT(NameEventPing){};
 

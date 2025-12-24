@@ -1,4 +1,4 @@
-#include "ufsm/ufsm.hpp"
+#include "ufsm/ufsm.h"
 #include "test_support.h"
 
 namespace drill_down_test {

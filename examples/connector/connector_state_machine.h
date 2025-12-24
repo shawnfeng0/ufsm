@@ -1,6 +1,6 @@
 #pragma once
 
-#include <ufsm/ufsm.hpp>
+#include <ufsm/ufsm.h>
 
 #include "../log.h"
 

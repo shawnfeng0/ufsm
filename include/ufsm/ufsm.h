@@ -1,5 +1,5 @@
-#ifndef UFSM_UFSM_HPP_
-#define UFSM_UFSM_HPP_
+#ifndef UFSM_UFSM_H_
+#define UFSM_UFSM_H_
 
 #include <cassert>
 #include <cstddef>
@@ -752,18 +752,18 @@ class StateMachine {
 }  // namespace ufsm
 
 // Macros for defining state machines, states, and events.
-#define FSM_STATE_MACHINE(N, I) \
-  struct I;                     \
-  struct N : ufsm::StateMachine<N, I>
-#define _FSM_STATE_2(N, C) \
-  struct C;                \
-  struct N : ufsm::State<N, C>
-#define _FSM_STATE_3(N, C, I) \
-  struct C;                   \
-  struct I;                   \
-  struct N : ufsm::State<N, C, I>
+#define FSM_STATE_MACHINE(machine_type, initial_state_type) \
+  struct initial_state_type;                                \
+  struct machine_type : ufsm::StateMachine<machine_type, initial_state_type>
+#define _FSM_STATE_2(state_type, parent_state_type) \
+  struct parent_state_type;                         \
+  struct state_type : ufsm::State<state_type, parent_state_type>
+#define _FSM_STATE_3(state_type, parent_state_type, initial_state_type) \
+  struct parent_state_type;                                             \
+  struct initial_state_type;                                            \
+  struct state_type : ufsm::State<state_type, parent_state_type, initial_state_type>
 #define FSM_STATE(...) _FSM_GET_MACRO(__VA_ARGS__, _FSM_STATE_3, _FSM_STATE_2)(__VA_ARGS__)
-#define _FSM_GET_MACRO(_1, _2, _3, NAME, ...) NAME
-#define FSM_EVENT(N) struct N : ufsm::Event<N>
+#define _FSM_GET_MACRO(first_arg, second_arg, third_arg, selected_macro, ...) selected_macro
+#define FSM_EVENT(event_type) struct event_type : ufsm::Event<event_type>
 
-#endif  // UFSM_UFSM_HPP_
+#endif  // UFSM_UFSM_H_
