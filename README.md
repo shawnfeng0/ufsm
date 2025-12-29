@@ -9,7 +9,7 @@
 *   **Type-Safe**: Heavily relies on C++ templates and CRTP for compile-time checks.
 *   **Efficient Memory Model**: States are managed via `std::unique_ptr` with no shared pointer overhead.
 *   **Event Deferral**: Built-in support for deferring events to be processed later.
-*   **Flexible Transitions**: Supports sibling transitions, hierarchical transitions, and custom actions/guards.
+*   **Flexible Transitions**: Supports sibling transitions, hierarchical transitions, custom actions/guards, and passing constructor arguments to destination states.
 
 ## Integration
 
@@ -125,6 +125,34 @@ ufsm::Result React(const EvCheck& e) {
         return Transit<DestState>();
     }
     return DiscardEvent();
+}
+```
+
+### Transit with Constructor Arguments
+
+States can receive constructor arguments during transitions using `with_args`:
+
+```cpp
+// Define a state with custom constructor
+struct Navigating : ufsm::State<Navigating, Active> {
+    std::string destination;
+    int speed;
+
+    Navigating(std::string dest, int spd)
+        : destination(std::move(dest)), speed(spd) {}
+};
+
+// Transition with constructor arguments
+ufsm::Result React(const EvGoTo& e) {
+    return Transit<Navigating>(ufsm::with_args, e.destination, e.speed);
+}
+
+// Transition with both action AND constructor arguments
+ufsm::Result React(const EvGoTo& e) {
+    return Transit<Navigating>(
+        []() { std::cout << "Starting navigation...\n"; },
+        ufsm::with_args, e.destination, e.speed
+    );
 }
 ```
 

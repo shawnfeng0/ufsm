@@ -7,6 +7,7 @@
 #include <memory>
 #include <string>
 #include <string_view>
+#include <tuple>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -112,6 +113,11 @@ enum class Result {
   kDeferEvent,    // Event was deferred by the state.
   kConsumed       // Event was consumed by the state.
 };
+
+// Tag type for passing constructor arguments in Transit.
+// Usage: Transit<DestState>(ufsm::with_args, arg1, arg2, ...)
+struct with_args_t { explicit with_args_t() = default; };
+inline constexpr with_args_t with_args{};
 
 // Forward declarations
 template <class EventType>
@@ -250,17 +256,17 @@ struct HasOnExitMethod<StateType, std::void_t<decltype(std::declval<StateType&>(
 
 // Helper to construct a chain of states.
 // Recursively constructs states from Head to Tail.
-template <class ContextList, class OutermostContext>
+template <typename ContextList, typename OutermostContext>
 struct Constructor;
 
-template <typename Head, typename... Tail, class OutermostContext>
+template <typename Head, typename... Tail, typename OutermostContext>
 struct Constructor<mp::List<Head, Tail...>, OutermostContext> {
-  template <typename ContextPtr>
-  static void Construct(const ContextPtr& context_ptr, OutermostContext& state_machine) {
+  template <typename ContextPtr, typename Factory = std::nullptr_t>
+  static void Construct(const ContextPtr& context_ptr, OutermostContext& state_machine, Factory&& factory = nullptr) {
     if constexpr (sizeof...(Tail) == 0)
-      Head::DeepConstruct(context_ptr, state_machine);
+      Head::DeepConstruct(context_ptr, state_machine, std::forward<Factory>(factory));  // Pass factory only to final state
     else
-      Constructor<mp::List<Tail...>, OutermostContext>::Construct(Head::ShallowConstruct(context_ptr, state_machine), state_machine);
+      Constructor<mp::List<Tail...>, OutermostContext>::Construct(Head::ShallowConstruct(context_ptr, state_machine), state_machine, std::forward<Factory>(factory));
   }
 };
 
@@ -413,9 +419,35 @@ class State : public detail::StateBase {
   }
 
   // Initiate a transition to DestState.
-  template <class DestState, class Action = std::nullptr_t>
+  // Usage:
+  //   Transit<DestState>()                            - basic transition
+  //   Transit<DestState>(action)                      - with transition action
+  //   Transit<DestState>(with_args, args...)          - with constructor arguments
+  //   Transit<DestState>(action, with_args, args...)  - with both
+  template <typename DestState, typename Action = std::nullptr_t>
   [[nodiscard]] Result Transit(Action&& action = nullptr) {
     return TransitImpl<DestState>(std::forward<Action>(action));
+  }
+
+  template <typename DestState, typename... Args>
+  [[nodiscard]] Result Transit(with_args_t, Args&&... args) {
+    return Transit<DestState>(nullptr, with_args, std::forward<Args>(args)...);
+  }
+
+  template <typename DestState, typename Action, typename... Args>
+  [[nodiscard]] Result Transit(Action&& action, with_args_t, Args&&... args) {
+    auto factory = [t = std::make_tuple(std::forward<Args>(args)...)](auto ctx) mutable {
+      return std::apply([ctx](auto&&... a) {
+        if constexpr (std::is_constructible_v<DestState, decltype(ctx), decltype(a)...>)
+          return std::make_unique<DestState>(ctx, std::move(a)...);
+        else {
+          auto state = std::make_unique<DestState>(std::move(a)...);
+          state->context_ = ctx;
+          return state;
+        }
+      }, std::move(t));
+    };
+    return TransitImpl<DestState>(std::forward<Action>(action), std::move(factory));
   }
 
   // Helper methods for reaction results.
@@ -455,8 +487,8 @@ class State : public detail::StateBase {
   const OutermostContextBaseType& OutermostContextBase() const { return context_->OutermostContextBase(); }
   OutermostContextBaseType& OutermostContextBase() { return context_->OutermostContextBase(); }
 
-  template <class DestState, class Action>
-  [[nodiscard]] Result TransitImpl(Action&& action) {
+  template <typename DestState, typename Action, typename Factory = std::nullptr_t>
+  [[nodiscard]] Result TransitImpl(Action&& action, Factory&& factory = nullptr) {
     // Find the common ancestor (Least Common Ancestor) between the current state and the destination state.
     // We include Derived (current state) in the search list to handle drill-down transitions correctly.
     using CommonAncestorType = typename mp::FindFirstCommon<typename mp::PushFront<ContextTypeList, Derived>::type,
@@ -492,7 +524,7 @@ class State : public detail::StateBase {
 
       // Construct the new state path from 'this' to DestState.
       detail::Constructor<typename detail::MakeContextList<Derived, DestState>::type,
-                          OutermostContextBaseType>::Construct(static_cast<Derived*>(this), state_machine);
+                          OutermostContextBaseType>::Construct(static_cast<Derived*>(this), state_machine, std::forward<Factory>(factory));
 
     } else {
       // Standard case: LCA is an ancestor.
@@ -517,7 +549,7 @@ class State : public detail::StateBase {
 
       // Construct the new state path from the common ancestor to the destination state.
       detail::Constructor<typename detail::MakeContextList<CommonAncestorType, DestState>::type,
-                          OutermostContextBaseType>::Construct(&common_ancestor, state_machine);
+                          OutermostContextBaseType>::Construct(&common_ancestor, state_machine, std::forward<Factory>(factory));
     }
 
     return Result::kConsumed;
@@ -549,26 +581,30 @@ class State : public detail::StateBase {
   template <class, class>
   friend struct ufsm::detail::Constructor;
 
-  static void DeepConstruct(const ContextPtrType& context, OutermostContextBaseType& out_context) {
+  template <typename Factory = std::nullptr_t>
+  static void DeepConstruct(const ContextPtrType& context, OutermostContextBaseType& out_context, Factory&& factory = nullptr) {
     static_assert(std::is_base_of_v<State, Derived>, "Derived state must inherit from ufsm::State<Derived, ...>");
     static_assert(std::is_void_v<InnerInitial> || std::is_base_of_v<detail::StateBase, InnerInitial>,
                   "InnerInitial must be a State or void");
-    auto* p_inner = ShallowConstruct(context, out_context);
+    auto* p_inner = ShallowConstruct(context, out_context, std::forward<Factory>(factory));
     if constexpr (!std::is_same_v<void, InnerInitial>) InnerInitial::DeepConstruct(p_inner, out_context);
   }
 
-  static InnerContextPtrType ShallowConstruct(const ContextPtrType& context, OutermostContextBaseType& out_context) {
+  template <typename Factory = std::nullptr_t>
+  static InnerContextPtrType ShallowConstruct(const ContextPtrType& context, OutermostContextBaseType& out_context, [[maybe_unused]] Factory&& factory = nullptr) {
     std::unique_ptr<Derived> state;
-    if constexpr (std::is_constructible_v<Derived, ContextPtrType>) {
+    if constexpr (!std::is_same_v<std::decay_t<Factory>, std::nullptr_t>) {
+      state = factory(context);  // TransitWithArgs path
+    } else if constexpr (std::is_constructible_v<Derived, ContextPtrType>) {
       state = std::make_unique<Derived>(context);
-    } else {
+    } else if constexpr (std::is_default_constructible_v<Derived>) {
       state = std::make_unique<Derived>();
       state->context_ = context;
+    } else {
+      static_assert(!sizeof(Derived), "State requires constructor arguments. Use TransitWithArgs().");
     }
     auto* ptr = out_context.Add(std::move(state));
-    if constexpr (detail::HasOnEntryMethod<Derived>::value) {
-      ptr->OnEntry();
-    }
+    if constexpr (detail::HasOnEntryMethod<Derived>::value) ptr->OnEntry();
     return ptr;
   }
 

@@ -12,6 +12,11 @@ FSM_EVENT(EvClear){};
 FSM_EVENT(EvLowBattery){};
 FSM_EVENT(EvCharged){};
 FSM_EVENT(EvPing){}; // For unhandled event demonstration
+FSM_EVENT(EvGoTo) {  // Event with destination data
+    std::string destination;
+    int speed;
+    EvGoTo(std::string dest, int spd) : destination(std::move(dest)), speed(spd) {}
+};
 
 // --------------------------------------------------------------------------
 // 2. Forward Declarations
@@ -21,6 +26,7 @@ struct Idle;
 struct Active;
 struct Moving;
 struct Processing;
+struct Navigating;  // New state with constructor arguments
 struct LowBattery;
 
 // --------------------------------------------------------------------------
@@ -93,9 +99,20 @@ FSM_STATE(Moving, Active) {
         void operator()() { std::cout << "  [Action] Obstacle detected! Initiating avoidance protocol...\n"; }
     };
 
+    // Demonstrate Transit with constructor arguments
+    ufsm::Result React(const EvGoTo& e) {
+        std::cout << "  [Moving] Received navigation request to '" << e.destination << "'\n";
+        // Transit with action AND constructor arguments
+        return Transit<Navigating>(
+            []() { std::cout << "  [Action] Setting navigation mode...\n"; },
+            ufsm::with_args, e.destination, e.speed
+        );
+    }
+
     using reactions = ufsm::List<
         // Sibling transition with action
-        ufsm::Transition<EvObstacle, Processing, AvoidAction>
+        ufsm::Transition<EvObstacle, Processing, AvoidAction>,
+        ufsm::Reaction<EvGoTo>
     >;
 };
 
@@ -118,6 +135,32 @@ FSM_STATE(Processing, Active) {
              return Transit<LowBattery>();
         }
 
+        return Transit<Moving>();
+    }
+
+    using reactions = ufsm::List<
+        ufsm::Reaction<EvClear>
+    >;
+};
+
+// --- Navigating State ---
+// Substate of Active with constructor arguments.
+// Demonstrates Transit with constructor parameters.
+FSM_STATE(Navigating, Active) {
+    std::string destination_;
+    int speed_;
+
+    // Constructor with parameters (no context)
+    Navigating(std::string dest, int speed)
+        : destination_(std::move(dest)), speed_(speed) {
+        std::cout << "  [Navigating] Enter (Going to '" << destination_
+                  << "' at speed " << speed_ << ")\n";
+    }
+    ~Navigating() { std::cout << "  [Navigating] Exit (Arrived at " << destination_ << ")\n"; }
+
+    // When arriving, go back to Moving
+    ufsm::Result React(const EvClear&) {
+        std::cout << "  [Navigating] Destination '" << destination_ << "' reached!\n";
         return Transit<Moving>();
     }
 
@@ -157,10 +200,16 @@ int main() {
     std::cout << "\n--- 3. Custom Logic & Context Access (Processing -> Moving) ---\n";
     robot.ProcessEvent(EvClear{});
 
-    std::cout << "\n--- 4. Hierarchical Transition / Drill-up (Moving -> Active -> Idle) ---\n";
+    std::cout << "\n--- 4. Transit with Constructor Args (Moving -> Navigating) ---\n";
+    robot.ProcessEvent(EvGoTo{"Kitchen", 50});
+
+    std::cout << "\n--- 5. Return from Navigating (Navigating -> Moving) ---\n";
+    robot.ProcessEvent(EvClear{});
+
+    std::cout << "\n--- 6. Hierarchical Transition / Drill-up (Moving -> Active -> Idle) ---\n";
     robot.ProcessEvent(EvStop{});
 
-    std::cout << "\n--- 5. Deferral Logic (Idle -> LowBattery) ---\n";
+    std::cout << "\n--- 7. Deferral Logic (Idle -> LowBattery) ---\n";
     robot.ProcessEvent(EvLowBattery{});
 
     std::cout << "\n[User] Sending EvStart (should be deferred)...\n";
@@ -172,7 +221,7 @@ int main() {
     // 1. LowBattery -> Idle (via EvCharged)
     // 2. Idle -> Active -> Moving (via deferred EvStart)
 
-    std::cout << "\n--- 6. Unhandled Event Hook ---\n";
+    std::cout << "\n--- 8. Unhandled Event Hook ---\n";
     robot.ProcessEvent(EvPing{});
 
     std::cout << "\n=== Demo Complete ===\n";

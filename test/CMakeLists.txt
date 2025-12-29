@@ -26,6 +26,7 @@ add_executable(ufsm_test
   test_context_access_behavior.cc
   test_unhandled_event_hook_behavior.cc
   test_entry_exit.cc
+  test_transit_with_args.cc
 )
 
 target_link_libraries(ufsm_test
