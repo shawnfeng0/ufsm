@@ -1,6 +1,8 @@
 #ifndef UFSM_UFSM_H_
 #define UFSM_UFSM_H_
 
+#define UFSM_VERSION "0.4.0"
+
 #include <cassert>
 #include <cstddef>
 #include <deque>

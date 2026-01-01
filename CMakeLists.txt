@@ -1,5 +1,10 @@
 cmake_minimum_required(VERSION 3.14)
-project(ufsm)
+
+# Extract version from header
+file(STRINGS "include/ufsm/ufsm.h" UFSM_VER_LINE REGEX "UFSM_VERSION \"[0-9.]+\"")
+string(REGEX MATCH "[0-9.]+" UFSM_VER "${UFSM_VER_LINE}")
+
+project(ufsm VERSION ${UFSM_VER} LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 

@@ -1,0 +1,34 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Create release body from changelog
+        shell: bash
+        run: |
+          tag="${{ github.ref_name }}"
+          tag_no_v="${tag#v}"
+          tag_escaped=$(echo "$tag_no_v" | sed 's/\./\\./g')
+          awk "/## \\[(v)?$tag_escaped\]/ {flag=1; next} /^## \\[/ {flag=0} flag" CHANGELOG.md | sed '/^$/d' > release_body.md
+          repo_url="https://github.com/${{ github.repository }}"
+          echo -e "\nFor more release notes, see [CHANGELOG.md]($repo_url/blob/${{ github.ref_name }}/CHANGELOG.md)" >> release_body.md
+
+      - name: Create Release
+        run: |
+          gh release create ${{ github.ref_name }} \
+            --title "Release ${{ github.ref_name }}" \
+            --notes-file release_body.md
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
